@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>{{ guild }} — Raid Analytics</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+  <div class="aurora"></div>
+
+  <header class="topbar">
+    <div class="brand">
+      <div class="sigil">⚔</div>
+      <div>
+        <h1>{{ guild }}</h1>
+        <p class="sub" id="guild-sub">Raid performance analytics</p>
+      </div>
+    </div>
+
+    <div class="controls">
+      <div class="timeframe" id="timeframe" role="group" aria-label="Timeframe">
+        <button data-days="7">7d</button>
+        <button data-days="14" class="active">14d</button>
+        <button data-days="30">30d</button>
+        <button data-days="60">60d</button>
+      </div>
+      <button class="refresh" id="refresh" title="Re-query WarcraftLogs">⟳ Refresh</button>
+    </div>
+  </header>
+
+  <section class="drilldown">
+    <label class="select-wrap">
+      <span>Raid</span>
+      <select id="raid-select"><option value="">Overall — all bosses</option></select>
+    </label>
+    <label class="select-wrap" id="boss-wrap" hidden>
+      <span>Boss</span>
+      <select id="boss-select"></select>
+    </label>
+  </section>
+
+  <section class="statbar" id="statbar"></section>
+
+  <!-- Overall view -->
+  <div id="overall-view">
+    <nav class="filters" id="category-filters"></nav>
+    <main id="results" class="results"></main>
+  </div>
+
+  <!-- Boss drill-down panel -->
+  <main id="boss-panel" class="boss-panel" hidden></main>
+
+  <div class="overlay" id="overlay" hidden>
+    <div class="spinner"></div>
+    <p id="overlay-msg">Summoning logs from WarcraftLogs…</p>
+  </div>
+
+  <footer class="footer">
+    <span>Data via WarcraftLogs API · default window <b>{{ default_days }}d</b></span>
+    <span>Add checks by dropping a file in <code>app/checks/builtin/</code></span>
+  </footer>
+
+  <script>window.DEFAULT_DAYS = {{ default_days }};</script>
+  <script src="/static/app.js"></script>
+</body>
+</html>

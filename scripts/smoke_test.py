@@ -1,0 +1,88 @@
+"""Offline smoke test: builds a synthetic AnalysisDataset and runs every
+registered check. No API credentials required. Verifies the framework wiring,
+auto-discovery, and that each check produces a valid result.
+
+Run:  ./.venv/Scripts/python.exe scripts/smoke_test.py
+"""
+from __future__ import annotations
+
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+import polars as pl
+
+from app.checks import list_checks, run_all
+from app.ingest.fetcher import Timeframe
+from app.ingest.normalize import AnalysisDataset
+
+
+def synthetic() -> AnalysisDataset:
+    players = pl.DataFrame({
+        "player": ["Tankzilla", "Healbot", "Pewpew", "Slacker", "Stabby"],
+        "player_class": ["Warrior", "Priest", "Mage", "Hunter", "Rogue"],
+    })
+    damage = pl.DataFrame({
+        "report_code": ["AAAA"] * 5,
+        "player": ["Pewpew", "Stabby", "Slacker", "Tankzilla", "Healbot"],
+        "player_class": ["Mage", "Rogue", "Hunter", "Warrior", "Priest"],
+        "total": [9.0e8, 7.5e8, 2.1e8, 3.0e8, 5.0e7],
+        "active_time_s": [300.0, 300.0, 300.0, 300.0, 300.0],
+        "dps": [3.0e6, 2.5e6, 7.0e5, 1.0e6, 1.6e5],
+    })
+    healing = pl.DataFrame({
+        "report_code": ["AAAA"], "player": ["Healbot"], "player_class": ["Priest"],
+        "total": [8.0e8], "hps": [2.6e6],
+    })
+    casts = pl.DataFrame({
+        "report_code": ["AAAA"] * 4,
+        "player": ["Tankzilla", "Pewpew", "Healbot", "Tankzilla"],
+        "ability_id": [871, 86949, 47788, 190456],
+        "ability_name": ["Shield Wall", "Healing Potion", "Guardian Spirit", "Ardent Defender"],
+        "hits": [4.0, 2.0, 3.0, 1.0],
+    })
+    deaths = pl.DataFrame({
+        "report_code": ["AAAA"] * 6,
+        "fight_id": [1, 1, 1, 2, 2, 2],
+        "player": ["Slacker", "Stabby", "Slacker", "Slacker", "Pewpew", "Stabby"],
+        "death_time_s": [12.0, 95.0, 30.0, 8.0, 150.0, 60.0],
+        "death_order": [1, 3, 2, 1, 3, 2],
+        "ability": ["Fireball", "Cleave", "Fireball", "Stomp", "Enrage", "Cleave"],
+    })
+    fights = pl.DataFrame({
+        "report_code": ["AAAA", "AAAA"], "fight_id": [1, 2],
+        "name": ["Boss A", "Boss B"], "difficulty": [5, 5],
+        "kill": [True, False], "duration_s": [300.0, 280.0],
+    })
+    return AnalysisDataset(
+        timeframe=Timeframe(days=14, start_ms=0, end_ms=1),
+        reports=[{"code": "AAAA", "title": "Test Raid", "zone": "Test Zone"}],
+        players=players, fights=fights, damage=damage, healing=healing, casts=casts, deaths=deaths,
+    )
+
+
+def main() -> int:
+    checks = list_checks()
+    print(f"Discovered {len(checks)} checks:")
+    for c in checks:
+        print(f"  · {c['id']:<18} [{c['category']}]  {c['name']}")
+
+    ds = synthetic()
+    print("\nRunning checks on synthetic data:\n")
+    results = run_all(ds)
+    assert results, "no results produced"
+    for r in results:
+        d = r.to_dict()
+        assert d["id"] and d["name"] and "rows" in d, f"malformed result: {d}"
+        print(f"[{d['severity'].upper():<8}] {d['name']}: {d['headline']}")
+        for i, row in enumerate(d["rows"][:3], 1):
+            print(f"      {i}. {row['player']:<10} {row['display']:<14} {row['detail']}")
+        print()
+
+    print(f"OK — {len(results)} checks ran cleanly.")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

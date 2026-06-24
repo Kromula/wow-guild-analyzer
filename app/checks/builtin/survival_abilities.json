@@ -1,0 +1,26 @@
+{
+  "_comment": "Edit this list freely — it drives the 'defensives & consumables' check. Match is case-insensitive substring on the cast ability name, so 'potion' matches 'Healing Potion', 'Refreshing Healing Potion', etc. No code change needed when you add entries.",
+  "consumables": [
+    "Healthstone",
+    "Healing Potion",
+    "Refreshing Healing Potion",
+    "Dreamwalker's Healing Potion",
+    "Cavedweller's Delight",
+    "Algari Healing Potion"
+  ],
+  "personal_defensives": [
+    "Shield Wall", "Last Stand", "Die by the Sword", "Rallying Cry",
+    "Icebound Fortitude", "Anti-Magic Shell", "Vampiric Blood",
+    "Dispersion", "Pain Suppression", "Desperate Prayer", "Fade",
+    "Barkskin", "Survival Instincts", "Renewal", "Frenzied Regeneration",
+    "Turtle", "Aspect of the Turtle", "Exhilaration",
+    "Cloak of Shadows", "Evasion", "Crimson Vial", "Feint",
+    "Ice Block", "Greater Invisibility", "Alter Time", "Mirror Image",
+    "Netherwalk", "Blur", "Darkness",
+    "Touch of Karma", "Fortifying Brew", "Diffuse Magic", "Dampen Harm",
+    "Divine Shield", "Divine Protection", "Shield of Vengeance", "Ardent Defender", "Guardian of Ancient Kings",
+    "Astral Shift", "Stone Bulwark",
+    "Unending Resolve", "Dark Pact",
+    "Obsidian Scales", "Renewing Blaze"
+  ]
+}
