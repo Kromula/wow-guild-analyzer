@@ -99,10 +99,11 @@ function renderCards() {
 function card(c) {
   const el = document.createElement("article");
   el.className = `card ${c.severity}`;
+  const showDetail = c.columns.length > 2;
   const rowsHtml = c.rows.length
     ? `<table><thead><tr><th class="rank">#</th>${c.columns
         .map((col) => `<th>${col}</th>`).join("")}</tr></thead><tbody>
-        ${c.rows.map((r, i) => row(r, i)).join("")}</tbody></table>`
+        ${c.rows.map((r, i) => row(r, i, showDetail)).join("")}</tbody></table>`
     : `<div class="empty">No entries.</div>`;
   el.innerHTML = `
     <div class="card-head">
@@ -115,14 +116,14 @@ function card(c) {
   return el;
 }
 
-function row(r, i) {
+function row(r, i, showDetail = true) {
   const color = CLASS_COLORS[r.player_class] || "#8aa";
   const dot = `<span class="cdot" style="background:${color}"></span>`;
   return `<tr>
     <td class="rank">${i + 1}</td>
     <td class="player">${dot}${escapeHtml(r.player)}</td>
     <td class="val">${escapeHtml(r.display)}</td>
-    <td class="detail">${escapeHtml(r.detail || "")}</td>
+    ${showDetail ? `<td class="detail">${escapeHtml(r.detail || "")}</td>` : ""}
   </tr>`;
 }
 
@@ -132,13 +133,6 @@ function escapeHtml(s) {
 }
 
 // ── Boss drill-down ───────────────────────────────────────
-const fmtNum = (n) => {
-  n = Number(n) || 0;
-  for (const [u, d] of [["B", 1e9], ["M", 1e6], ["K", 1e3]])
-    if (Math.abs(n) >= d) return (n / d).toFixed(2) + u;
-  return n.toFixed(0);
-};
-
 async function loadBosses(force = false) {
   try {
     const res = await fetch(`/api/bosses?days=${state.days}&force=${force}`);
@@ -194,12 +188,14 @@ function renderBossPanel(d) {
   const best = b.best_kill_s != null ? `${b.best_kill_s.toFixed(0)}s`
              : b.best_wipe_pct != null ? `${b.best_wipe_pct.toFixed(1)}%` : "—";
   const bestLbl = b.best_kill_s != null ? "Best kill" : "Best pull";
+  // Same checks the overall page renders, just scoped to this encounter.
+  const checks = (d.checks || []).slice().sort((a, c) => SEV_RANK[a.severity] - SEV_RANK[c.severity]);
   const panel = $("#boss-panel");
   panel.innerHTML = `
     <div class="boss-hero">
       <div>
         <h2>${escapeHtml(b.name)}</h2>
-        <div class="zone">${escapeHtml(b.zone)} · Mythic · last ${d.timeframe_days}d</div>
+        <div class="zone">${escapeHtml(b.zone)} · last ${d.timeframe_days}d</div>
       </div>
       <div class="metrics">
         ${metric(b.pulls, "Pulls")}
@@ -208,37 +204,14 @@ function renderBossPanel(d) {
         ${metric(best, bestLbl)}
       </div>
     </div>
-    <div class="panel-grid">
-      ${tableCard("Damage", ["Player", "DPS", "Total"], d.damage.slice(0, 12).map((r) =>
-        rowCells(r.player, r.player_class, `${fmtNum(r.dps)}`, fmtNum(r.total))))}
-      ${tableCard("Healing", ["Player", "HPS", "Total"], d.healing.slice(0, 12).map((r) =>
-        rowCells(r.player, null, `${fmtNum(r.hps)}`, fmtNum(r.total))))}
-      ${tableCard("Deaths", ["Player", "Deaths", "Detail"], d.deaths.slice(0, 12).map((r) =>
-        rowCells(r.player, null, String(r.deaths),
-          `${r.first_deaths}× first · avg ${r.avg_time_s.toFixed(0)}s · ${escapeHtml(r.top_killer)}`)))}
-      ${tableCard("Defensives & Consumables", ["Player", "Defensives", "Pots/Stones"], d.survival.slice(0, 14).map((r) =>
-        rowCells(r.player, null, String(r.defensives),
-          r.consumables === 0 ? "⚠ 0 consumables" : String(r.consumables))))}
-    </div>`;
+    <div class="results" id="boss-results"></div>`;
+  const host = $("#boss-results");
+  if (!checks.length) { host.innerHTML = `<div class="empty">No checks for this boss.</div>`; return; }
+  checks.forEach((c) => host.appendChild(card(c)));
 }
 
 const metric = (num, lbl, cls = "") =>
   `<div class="metric ${cls}"><div class="m-num">${num}</div><div class="m-lbl">${lbl}</div></div>`;
-
-function rowCells(player, klass, v1, v2) {
-  const color = CLASS_COLORS[klass] || "#8aa";
-  const dot = klass ? `<span class="cdot" style="background:${color}"></span>` : "";
-  return `<tr><td class="player">${dot}${escapeHtml(player)}</td>
-    <td class="val">${escapeHtml(v1)}</td><td class="detail">${escapeHtml(v2)}</td></tr>`;
-}
-
-function tableCard(title, cols, rows) {
-  const body = rows.length ? rows.join("") : `<tr><td colspan="3" class="empty">No data.</td></tr>`;
-  return `<article class="card info">
-    <div class="card-head"><h3>${title}</h3></div>
-    <table><thead><tr>${cols.map((c) => `<th>${c}</th>`).join("")}</tr></thead>
-    <tbody>${body}</tbody></table></article>`;
-}
 
 // ── wire up controls ──────────────────────────────────────
 function reloadCurrentView(force) {

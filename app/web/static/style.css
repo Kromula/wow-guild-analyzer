@@ -195,7 +195,9 @@ tbody tr:hover { background: rgba(255,255,255,0.03); }
 .boss-hero .kills .m-num { color: var(--good); }
 .boss-hero .wipes .m-num { color: var(--critical); }
 
-.panel-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(330px, 1fr)); gap: 1.1rem; }
+/* Boss panel reuses the overall .results card grid; horizontal inset already
+   comes from .boss-panel, so strip the grid's own side padding here. */
+.boss-panel .results { padding: 0 0 1rem; }
 
 /* ── Overlay / footer ───────────────────────────────────── */
 .overlay {
