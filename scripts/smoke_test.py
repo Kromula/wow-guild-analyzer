@@ -48,13 +48,16 @@ def synthetic() -> AnalysisDataset:
         "ability_name": ["Shield Wall", "Healing Potion", "Guardian Spirit", "Ardent Defender"],
         "hits": [4.0, 2.0, 3.0, 1.0],
     })
+    # Slacker's fight-2 order-1 death is a Terminate — an unavoidable one-shot that
+    # the death checks must NOT count against him, so his early-death tally should
+    # be 2 (both from fight 1), not 3.
     deaths = pl.DataFrame({
         "report_code": ["AAAA"] * 6,
         "fight_id": [1, 1, 1, 2, 2, 2],
         "player": ["Slacker", "Stabby", "Slacker", "Slacker", "Pewpew", "Stabby"],
         "death_time_s": [12.0, 95.0, 30.0, 8.0, 150.0, 60.0],
         "death_order": [1, 3, 2, 1, 3, 2],
-        "ability": ["Fireball", "Cleave", "Fireball", "Stomp", "Enrage", "Cleave"],
+        "ability": ["Fireball", "Cleave", "Fireball", "Terminate", "Enrage", "Cleave"],
     })
     fights = pl.DataFrame({
         "report_code": ["AAAA", "AAAA"], "fight_id": [1, 2],

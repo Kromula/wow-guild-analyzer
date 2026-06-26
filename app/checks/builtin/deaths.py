@@ -16,6 +16,21 @@ from app.config import settings
 from app.ingest.normalize import AnalysisDataset
 
 
+def _culpable_deaths(ds: AnalysisDataset) -> pl.DataFrame:
+    """Deaths with unavoidable one-shots removed, so they don't blame the victim.
+
+    Drops any death whose killing-blow ability is in `non_culpable_death_abilities`
+    (e.g. Terminate — a missed-interrupt wipe, not the dead player's fault). Death
+    order is left as-is: other deaths keep their original position, so this only
+    *removes* rows, it doesn't re-rank survivors. Shared by both death checks so
+    they stay consistent."""
+    d = ds.deaths
+    skip = [s.lower() for s in settings.non_culpable_death_abilities]
+    if d.is_empty() or not skip:
+        return d
+    return d.filter(~pl.col("ability").str.to_lowercase().is_in(skip))
+
+
 @register
 class FrequentDeaths(Check):
     id = "frequent-deaths"
@@ -31,10 +46,11 @@ class FrequentDeaths(Check):
 
     def run(self, ds: AnalysisDataset) -> CheckResult:
         cutoff = settings.early_death_cutoff
-        if ds.deaths.is_empty():
+        deaths = _culpable_deaths(ds)
+        if deaths.is_empty():
             return self.result(severity=Severity.INFO, headline="No deaths recorded — clean runs!",
                                columns=["Player", "Early deaths"], rows=[])
-        early = ds.deaths.filter(pl.col("death_order") <= cutoff)
+        early = deaths.filter(pl.col("death_order") <= cutoff)
         if early.is_empty():
             return self.result(severity=Severity.INFO,
                                headline="No early deaths — wipes weren't anyone dying first.",
@@ -69,11 +85,12 @@ class DiesFirst(Check):
     order = 21
 
     def run(self, ds: AnalysisDataset) -> CheckResult:
-        if ds.deaths.is_empty():
+        deaths = _culpable_deaths(ds)
+        if deaths.is_empty():
             return self.result(severity=Severity.INFO, headline="No deaths recorded — clean runs!",
                                columns=["Player", "Avg death order", "Detail"], rows=[])
         agg = (
-            ds.deaths.group_by("player")
+            deaths.group_by("player")
             .agg(
                 pl.col("death_order").mean().alias("avg_order"),
                 pl.col("death_time_s").mean().alias("avg_time"),

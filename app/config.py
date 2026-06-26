@@ -39,6 +39,13 @@ class Settings(BaseSettings):
     # the "live portion" cutoff for avoidable-damage checks (e.g. Glaives).
     early_death_cutoff: int = 3
 
+    # Killing-blow abilities that shouldn't count against the victim in the death
+    # checks (Most Early Deaths / Dies First). Some mechanics are unavoidable
+    # one-shots that reflect a raid failure (e.g. a missed interrupt on Midnight
+    # Falls' Terminate), not the dead player's mistake. Matched case-insensitively
+    # on the killing-blow ability name. Editable without code changes.
+    non_culpable_death_abilities: tuple[str, ...] = ("Terminate",)
+
     # Midnight Falls boss-specific tracking. The Glaive ("Heaven's Glaives")
     # tracker fetches damage-taken events for this ability, scoped to this
     # encounter, on the boss panel. Confirmed from live logs; override if Blizzard
