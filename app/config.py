@@ -83,6 +83,12 @@ class Settings(BaseSettings):
     # Each finished raid log is immutable, so it's parsed once and reused.
     data_dir: str = "data"
 
+    # When several raiders upload a log for the same night, those reports overlap
+    # in time and would double-count pulls/deaths/attendance. Keep one canonical
+    # log per cluster of overlapping same-zone reports (the one with the most
+    # fights). Set False to count every report separately.
+    dedupe_overlapping_logs: bool = True
+
     # WCL endpoints
     wcl_token_url: str = "https://www.warcraftlogs.com/oauth/token"
     wcl_api_url: str = "https://www.warcraftlogs.com/api/v2/client"

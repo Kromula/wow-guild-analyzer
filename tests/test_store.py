@@ -19,11 +19,12 @@ TF = Timeframe(days=7, start_ms=START, end_ms=START + 120_000)
 
 @pytest.fixture(autouse=True)
 def _tmp_store(tmp_path):
-    saved_dir, saved_att = settings.data_dir, settings.min_attendance_pct
+    saved = (settings.data_dir, settings.min_attendance_pct, settings.dedupe_overlapping_logs)
     settings.data_dir = str(tmp_path)
     settings.min_attendance_pct = 0.0
+    settings.dedupe_overlapping_logs = False  # synthetic reports share times; keep both
     yield
-    settings.data_dir, settings.min_attendance_pct = saved_dir, saved_att
+    settings.data_dir, settings.min_attendance_pct, settings.dedupe_overlapping_logs = saved
 
 
 def _raw(code, players, fights, deaths_by_fight=None):

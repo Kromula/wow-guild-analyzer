@@ -16,7 +16,7 @@ from app.config import settings
 from app.ingest.fetcher import (RawReport, Timeframe, _assign_deaths, _bucket_events, _fetch_events,
                                 _fetch_player_details, _fetch_table, _list_reports, _load_report_detail,
                                 _to_float)
-from app.ingest.normalize import build_dataset
+from app.ingest.normalize import build_dataset, canonical_report_codes
 from app.wcl import WCLClient
 
 _CONCURRENCY = 5
@@ -126,6 +126,13 @@ async def analyze_boss(tf: Timeframe, encounter_id: int) -> dict:
         relevant = [r for r in raws if any(f.get("encounterID") == encounter_id for f in r.fights)]
         if not relevant:
             return {"error": "No pulls of that boss in the selected window."}
+
+        # Drop duplicate logs of the same night so pulls/kills aren't double-counted
+        # (same rule as the overall dataset; build_dataset below de-dups too).
+        if settings.dedupe_overlapping_logs:
+            keep = canonical_report_codes(
+                (r.code, r.zone, r.start_time, r.end_time, len(r.fights)) for r in relevant)
+            relevant = [r for r in relevant if r.code in keep]
 
         summary = _boss_summary(relevant, encounter_id)
         await asyncio.gather(*(_populate_boss_tables(guarded, client, r, encounter_id) for r in relevant))

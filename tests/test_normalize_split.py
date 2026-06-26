@@ -34,9 +34,12 @@ def _fight(fid, enc=9999, diff=5, kill=False, friendly=None):
 
 @pytest.fixture(autouse=True)
 def _restore_settings():
-    saved = settings.min_attendance_pct
+    # These tests use synthetic reports with identical times; disable dedup so
+    # each is counted (dedup itself is covered in test_dedupe.py).
+    saved = (settings.min_attendance_pct, settings.dedupe_overlapping_logs)
+    settings.dedupe_overlapping_logs = False
     yield
-    settings.min_attendance_pct = saved
+    settings.min_attendance_pct, settings.dedupe_overlapping_logs = saved
 
 
 def test_normalize_report_is_self_contained():

@@ -301,6 +301,52 @@ def normalize_report(raw: RawReport) -> ReportFrames:
     )
 
 
+def canonical_report_codes(reports) -> set[str]:
+    """Codes to KEEP when the same night is logged more than once.
+
+    `reports` is an iterable of `(code, zone, start_ms, end_ms, n_fights)`. When
+    several raiders upload the same night, those reports overlap in time and would
+    double-count everything. We cluster reports by zone (so two *different* raids
+    on the same evening aren't merged) and then by overlapping time window, and
+    keep one canonical report per cluster: the one with the most fights, breaking
+    ties by longest coverage then lexically-smallest code (for determinism).
+    """
+    by_zone: dict[object, list] = defaultdict(list)
+    for code, zone, start, end, n in reports:
+        by_zone[zone].append((start, end, n, code))
+
+    keep: set[str] = set()
+    for items in by_zone.values():
+        items.sort()  # by start, then end
+        cluster: list[tuple] = []
+        cluster_end = None
+        for start, end, n, code in items:
+            if cluster and cluster_end is not None and start <= cluster_end:
+                cluster.append((n, end - start, code))
+                cluster_end = max(cluster_end, end)
+            else:
+                if cluster:
+                    keep.add(_canonical(cluster))
+                cluster = [(n, end - start, code)]
+                cluster_end = end
+        if cluster:
+            keep.add(_canonical(cluster))
+    return keep
+
+
+def _canonical(cluster: list[tuple]) -> str:
+    """Pick the canonical code from a cluster of (n_fights, span, code) tuples."""
+    return sorted(cluster, key=lambda c: (-c[0], -c[1], c[2]))[0][2]
+
+
+def _dedupe(frames: list[ReportFrames]) -> list[ReportFrames]:
+    if not settings.dedupe_overlapping_logs or len(frames) < 2:
+        return frames
+    keep = canonical_report_codes(
+        (f.code, f.zone, f.start_time, f.end_time, f.fights.height) for f in frames)
+    return [f for f in frames if f.code in keep]
+
+
 def _core_raiders(frames: list[ReportFrames]) -> set[str]:
     """Players present for >= min_attendance_pct of the raid nights in the window.
 
@@ -338,9 +384,10 @@ def _concat(frames: list[ReportFrames], attr: str, empty) -> pl.DataFrame:
 def assemble(frames: list[ReportFrames], tf: Timeframe) -> AnalysisDataset:
     """Combine per-report frames into the cross-report AnalysisDataset.
 
-    This is where window-wide decisions live: the core-raider attendance filter,
-    the per-player primary-role pick, and concatenation. (Duplicate-night
-    de-duplication will plug in here.)"""
+    This is where window-wide decisions live: duplicate-night de-duplication,
+    the core-raider attendance filter, the per-player primary-role pick, and
+    concatenation."""
+    frames = _dedupe(frames)
     report_rows = [{"code": f.code, "title": f.title, "zone": f.zone} for f in frames]
 
     # First-seen class per player, and role fight-counts, accumulated across reports.
