@@ -43,7 +43,10 @@ class Settings(BaseSettings):
     # precisely; set current_tier_only = False for the old cross-tier behaviour
     # (heavier on the API, especially for "All").
     current_tier_only: bool = True
-    current_tier_zone_ids: tuple[int, ...] = ()
+    # Pinned to the current tier's raids. WCL bundles Voidspire, Dreamright and
+    # March on Quel'Danas under one zone id (46, labelled "VS / DR / MQD"); 50 is
+    # the Sporefall mini-raid. Empty falls back to auto-detection by active window.
+    current_tier_zone_ids: tuple[int, ...] = (46, 50)
     current_tier_active_days: int = 45
 
     # Only analyze fights at this raid difficulty. 1=LFR, 3=Normal, 4=Heroic,
