@@ -54,36 +54,6 @@ query ReportFights($code: String!) {
 }
 """
 
-# Friendly buff *applications* for a set of fights, filtered server-side to the
-# abilities we care about (defensives/consumables). The aggregate Buffs table is
-# raid-wide only, so we attribute usage to players via these events. The
-# filterExpression keeps the payload tiny (no pagination needed in practice).
-REPORT_BUFF_EVENTS = """
-query BuffEvents($code: String!, $startTime: Float!, $endTime: Float!,
-                 $fightIDs: [Int], $filter: String!) {
-  reportData {
-    report(code: $code) {
-      events(dataType: Buffs, hostilityType: Friendlies, startTime: $startTime,
-             endTime: $endTime, fightIDs: $fightIDs, limit: 10000, filterExpression: $filter) {
-        data
-        nextPageTimestamp
-      }
-    }
-  }
-}
-"""
-
-# Aggregate Buffs table — used only to build a guid -> ability-name map for a report.
-REPORT_BUFFS_TABLE = """
-query BuffsTable($code: String!, $startTime: Float!, $endTime: Float!, $fightIDs: [Int]) {
-  reportData {
-    report(code: $code) {
-      table(dataType: Buffs, startTime: $startTime, endTime: $endTime, fightIDs: $fightIDs)
-    }
-  }
-}
-"""
-
 # A single analysis table (Damage/Healing/Deaths/Casts/...) for a time window in a report.
 # `table` returns provider-shaped JSON which we parse in the normalizer.
 REPORT_TABLE = """
@@ -92,6 +62,41 @@ query ReportTable($code: String!, $startTime: Float!, $endTime: Float!,
   reportData {
     report(code: $code) {
       table(dataType: $dataType, startTime: $startTime, endTime: $endTime, fightIDs: $fightIDs)
+    }
+  }
+}
+"""
+
+# Raw event stream for a window, optionally filtered to one ability. Used for
+# avoidable-damage tracking (e.g. Glaive hits on Midnight Falls): unlike the
+# aggregate tables, events carry per-hit `timestamp` and `targetID`, which we
+# need to trim each pull to its "live" portion (before the Nth death). Paginated
+# via `nextPageTimestamp`.
+REPORT_EVENTS = """
+query ReportEvents($code: String!, $startTime: Float!, $endTime: Float!, $fightIDs: [Int],
+                   $dataType: EventDataType!, $abilityID: Float, $hostility: HostilityType) {
+  reportData {
+    report(code: $code) {
+      events(startTime: $startTime, endTime: $endTime, fightIDs: $fightIDs,
+             dataType: $dataType, abilityID: $abilityID, hostilityType: $hostility, limit: 10000) {
+        data
+        nextPageTimestamp
+      }
+    }
+  }
+}
+"""
+
+# Per-player role/spec breakdown for a window. `playerDetails` returns provider-
+# shaped JSON bucketed into tanks/healers/dps, each entry carrying class (`type`)
+# and a `specs` list of {spec, count} — count being fights played in that spec.
+# This is WCL's own role classification; we use it to identify tanks (which the
+# class-only damage table can't distinguish from same-class DPS).
+REPORT_PLAYER_DETAILS = """
+query ReportPlayerDetails($code: String!, $startTime: Float!, $endTime: Float!, $fightIDs: [Int]) {
+  reportData {
+    report(code: $code) {
+      playerDetails(startTime: $startTime, endTime: $endTime, fightIDs: $fightIDs)
     }
   }
 }

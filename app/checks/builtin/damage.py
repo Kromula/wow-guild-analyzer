@@ -22,6 +22,16 @@ def _healer_names(ds: AnalysisDataset) -> set[str]:
     return set(merged.filter(pl.col("heal") > pl.col("dmg")).get_column("player").to_list())
 
 
+def _tank_names(ds: AnalysisDataset) -> set[str]:
+    """Players whose primary role across the window is tank, per WCL's own role
+    classification (the playerDetails buckets parsed in normalize). Tanks aren't
+    expected to compete on damage, so they're excluded from the underperformer
+    ranking and instead define its floor."""
+    if ds.players.is_empty() or "role" not in ds.players.columns:
+        return set()
+    return set(ds.players.filter(pl.col("role") == "tank").get_column("player").to_list())
+
+
 def _player_dps(ds: AnalysisDataset) -> pl.DataFrame:
     """Time-weighted average DPS per player across the timeframe."""
     if ds.damage.is_empty():
@@ -71,30 +81,66 @@ class HighDamage(Check):
 class LowDamage(Check):
     id = "low-damage"
     name = "Underperforming Damage"
-    description = ("DPS-role players in the bottom of the meters. Players who heal more "
-                  "than they damage (healers) are excluded so the comparison is fair.")
+    description = ("DPS-role players doing less damage than a tank. Tanks (who aren't "
+                  "expected to compete on damage) set the floor and are themselves "
+                  "excluded; healers are excluded too, so the comparison is fair.")
     category = Category.PERFORMANCE
     order = 11
 
     def run(self, ds: AnalysisDataset) -> CheckResult:
         df = _player_dps(ds)
-        healers = _healer_names(ds)
-        if not df.is_empty() and healers:
-            df = df.filter(~pl.col("player").is_in(list(healers)))
-        rows = [
-            CheckRow(
-                player=r["player"],
-                player_class=r["player_class"],
-                value=r["dps"],
-                display=fmt_rate(r["dps"], "DPS"),
-                detail=f"{fmt_rate(r['total_damage'], 'total')} over {r['active_s']:.0f}s",
+        if df.is_empty():
+            return self.result(
+                severity=Severity.WARN, headline="No damage data in range.",
+                columns=["Player", "DPS", "Detail"], rows=[],
             )
-            for r in df.sort("dps").head(10).to_dicts()
-        ]
-        worst = rows[0].player if rows else "nobody"
+
+        tanks = _tank_names(ds)
+        healers = _healer_names(ds)
+
+        # Tank damage floor: the best DPS among detected tanks. A damage-role
+        # player below this is doing less damage than a tank — the underperformer
+        # signal we want. Computed before tanks are dropped from the ranking.
+        tank_df = df.filter(pl.col("player").is_in(list(tanks))) if tanks else df.head(0)
+        floor = tank_df.get_column("dps").max() if not tank_df.is_empty() else None
+        floor_setter = (tank_df.sort("dps", descending=True).get_column("player")[0]
+                        if not tank_df.is_empty() else None)
+
+        # Rank only damage-role players: drop tanks and healers.
+        exclude = tanks | healers
+        dps_df = df.filter(~pl.col("player").is_in(list(exclude))) if exclude else df
+
+        if floor is not None:
+            flagged = dps_df.filter(pl.col("dps") < floor).sort("dps")
+            rows = [
+                CheckRow(
+                    player=r["player"], player_class=r["player_class"], value=r["dps"],
+                    display=fmt_rate(r["dps"], "DPS"),
+                    detail=f"below tank floor · {fmt_rate(r['total_damage'], 'total')} over {r['active_s']:.0f}s",
+                )
+                for r in flagged.head(14).to_dicts()
+            ]
+            n = flagged.height
+            floor_txt = f"{floor_setter} {fmt_rate(floor, 'DPS')}"
+            headline = (f"{n} damage dealer(s) below the tank floor ({floor_txt})." if n
+                        else f"No damage dealer is below the tank floor ({floor_txt}).")
+            severity = Severity.WARN if n else Severity.GOOD
+        else:
+            # No tanks detected (no role data, or none tanked) — fall back to the
+            # plain bottom-of-meters ranking, still excluding any known healers.
+            rows = [
+                CheckRow(
+                    player=r["player"], player_class=r["player_class"], value=r["dps"],
+                    display=fmt_rate(r["dps"], "DPS"),
+                    detail=f"{fmt_rate(r['total_damage'], 'total')} over {r['active_s']:.0f}s",
+                )
+                for r in dps_df.sort("dps").head(10).to_dicts()
+            ]
+            worst = rows[0].player if rows else "nobody"
+            headline = f"{worst} is lowest among damage roles." if rows else "No damage data in range."
+            severity = Severity.WARN
+
         return self.result(
-            severity=Severity.WARN,
-            headline=f"{worst} is lowest among damage roles." if rows else "No damage data in range.",
-            columns=["Player", "DPS", "Detail"],
-            rows=rows,
+            severity=severity, headline=headline,
+            columns=["Player", "DPS", "Detail"], rows=rows,
         )

@@ -32,6 +32,20 @@ class Settings(BaseSettings):
     # and socials. Set to 0 to include everyone who appears in the logs.
     min_attendance_pct: float = 0.5
 
+    # Death ranking: only the first N deaths of a pull count as "meaningful".
+    # A wipe kills everyone, so later deaths are just the cascade — ranking by
+    # early deaths surfaces who actually triggers wipes rather than who was
+    # present for them. Lower = stricter (1 = first death only). Also reused as
+    # the "live portion" cutoff for avoidable-damage checks (e.g. Glaives).
+    early_death_cutoff: int = 3
+
+    # Midnight Falls boss-specific tracking. The Glaive ("Heaven's Glaives")
+    # tracker fetches damage-taken events for this ability, scoped to this
+    # encounter, on the boss panel. Confirmed from live logs; override if Blizzard
+    # re-IDs the spell. Set glaive_ability_id to 0 to disable the fetch.
+    midnight_falls_encounter_id: int = 3183
+    glaive_ability_id: int = 1254076
+
     # WCL endpoints
     wcl_token_url: str = "https://www.warcraftlogs.com/oauth/token"
     wcl_api_url: str = "https://www.warcraftlogs.com/api/v2/client"

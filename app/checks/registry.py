@@ -62,7 +62,9 @@ def run_all(ds: AnalysisDataset, only: list[str] | None = None) -> list[CheckRes
         if only and cls.id not in only:
             continue
         try:
-            results.append(cls().run(ds))
+            res = cls().run(ds)
+            if res is not None:  # None = check opted out of this view (e.g. no data)
+                results.append(res)
         except Exception:  # one bad check shouldn't kill the dashboard
             logger.exception("Check '%s' failed", cls.id)
     return results

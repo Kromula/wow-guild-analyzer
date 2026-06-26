@@ -9,6 +9,11 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
+# Check details can contain non-ASCII (e.g. "⚠"); force UTF-8 so the Windows
+# console (cp1252 by default) doesn't choke when printing results.
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8")
+
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import polars as pl
@@ -22,6 +27,7 @@ def synthetic() -> AnalysisDataset:
     players = pl.DataFrame({
         "player": ["Tankzilla", "Healbot", "Pewpew", "Slacker", "Stabby"],
         "player_class": ["Warrior", "Priest", "Mage", "Hunter", "Rogue"],
+        "role": ["tank", "healer", "dps", "dps", "dps"],
     })
     damage = pl.DataFrame({
         "report_code": ["AAAA"] * 5,
@@ -55,10 +61,21 @@ def synthetic() -> AnalysisDataset:
         "name": ["Boss A", "Boss B"], "difficulty": [5, 5],
         "kill": [True, False], "duration_s": [300.0, 280.0],
     })
+    # Avoidable-damage events. Fight 1's 3rd death is at t=95s, fight 2's at t=150s
+    # (see `deaths`), so the t=120 and t=200 hits fall in the wipe cascade and must
+    # be trimmed; only Pewpew@50s (fight 1) and Slacker@100s (fight 2) should count.
+    damage_taken = pl.DataFrame({
+        "report_code": ["AAAA"] * 4,
+        "fight_id": [1, 1, 2, 2],
+        "player": ["Pewpew", "Stabby", "Slacker", "Pewpew"],
+        "time_s": [50.0, 120.0, 100.0, 200.0],
+        "amount": [5.0e5, 9.9e5, 3.0e5, 9.9e5],
+    })
     return AnalysisDataset(
         timeframe=Timeframe(days=14, start_ms=0, end_ms=1),
         reports=[{"code": "AAAA", "title": "Test Raid", "zone": "Test Zone"}],
-        players=players, fights=fights, damage=damage, healing=healing, casts=casts, deaths=deaths,
+        players=players, fights=fights, damage=damage, healing=healing, casts=casts,
+        deaths=deaths, damage_taken=damage_taken,
     )
 
 

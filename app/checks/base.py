@@ -70,7 +70,12 @@ class Check(ABC):
     order: int = 100
 
     @abstractmethod
-    def run(self, ds: AnalysisDataset) -> CheckResult:
+    def run(self, ds: AnalysisDataset) -> CheckResult | None:
+        """Produce the check's finding, or return None to opt out of this view.
+
+        Returning None lets boss-/data-specific checks (e.g. the Midnight Falls
+        Glaive tracker) stay silent when their data isn't present, instead of
+        rendering an empty card. The registry drops None results."""
         ...
 
     # Convenience for subclasses to build a result with their own metadata.
