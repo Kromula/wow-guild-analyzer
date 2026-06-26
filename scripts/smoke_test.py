@@ -66,13 +66,15 @@ def synthetic() -> AnalysisDataset:
     })
     # Avoidable-damage events. Fight 1's 3rd death is at t=95s, fight 2's at t=150s
     # (see `deaths`), so the t=120 and t=200 hits fall in the wipe cascade and must
-    # be trimmed; only Pewpew@50s (fight 1) and Slacker@100s (fight 2) should count.
+    # be trimmed. Tankzilla's big t=40 hit is in the live window but must be dropped
+    # too — tanks soak Glaives. So only Pewpew@50 (fight 1) and Slacker@100 (fight 2)
+    # should remain, with Pewpew on top.
     damage_taken = pl.DataFrame({
-        "report_code": ["AAAA"] * 4,
-        "fight_id": [1, 1, 2, 2],
-        "player": ["Pewpew", "Stabby", "Slacker", "Pewpew"],
-        "time_s": [50.0, 120.0, 100.0, 200.0],
-        "amount": [5.0e5, 9.9e5, 3.0e5, 9.9e5],
+        "report_code": ["AAAA"] * 5,
+        "fight_id": [1, 1, 1, 2, 2],
+        "player": ["Tankzilla", "Pewpew", "Stabby", "Slacker", "Pewpew"],
+        "time_s": [40.0, 50.0, 120.0, 100.0, 200.0],
+        "amount": [9.9e6, 5.0e5, 9.9e5, 3.0e5, 9.9e5],
     })
     return AnalysisDataset(
         timeframe=Timeframe(days=14, start_ms=0, end_ms=1),

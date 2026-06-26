@@ -4,7 +4,7 @@ from __future__ import annotations
 import polars as pl
 
 from app.checks.base import Category, Check, CheckResult, CheckRow, Severity
-from app.checks.builtin._util import fmt_rate
+from app.checks.builtin._util import fmt_rate, tank_names
 from app.checks.registry import register
 from app.ingest.normalize import AnalysisDataset
 
@@ -20,16 +20,6 @@ def _healer_names(ds: AnalysisDataset) -> set[str]:
            if not ds.damage.is_empty() else pl.DataFrame({"player": [], "dmg": []}))
     merged = heal.join(dmg, on="player", how="left").with_columns(pl.col("dmg").fill_null(0.0))
     return set(merged.filter(pl.col("heal") > pl.col("dmg")).get_column("player").to_list())
-
-
-def _tank_names(ds: AnalysisDataset) -> set[str]:
-    """Players whose primary role across the window is tank, per WCL's own role
-    classification (the playerDetails buckets parsed in normalize). Tanks aren't
-    expected to compete on damage, so they're excluded from the underperformer
-    ranking and instead define its floor."""
-    if ds.players.is_empty() or "role" not in ds.players.columns:
-        return set()
-    return set(ds.players.filter(pl.col("role") == "tank").get_column("player").to_list())
 
 
 def _player_dps(ds: AnalysisDataset) -> pl.DataFrame:
@@ -95,7 +85,7 @@ class LowDamage(Check):
                 columns=["Player", "DPS", "Detail"], rows=[],
             )
 
-        tanks = _tank_names(ds)
+        tanks = tank_names(ds)
         healers = _healer_names(ds)
 
         # Tank damage floor: the best DPS among detected tanks. A damage-role

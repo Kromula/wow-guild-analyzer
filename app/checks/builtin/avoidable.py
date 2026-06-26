@@ -15,7 +15,7 @@ from __future__ import annotations
 import polars as pl
 
 from app.checks.base import Category, Check, CheckResult, CheckRow, Severity
-from app.checks.builtin._util import fmt_num
+from app.checks.builtin._util import fmt_num, tank_names
 from app.checks.registry import register
 from app.config import settings
 from app.ingest.normalize import AnalysisDataset
@@ -45,7 +45,8 @@ class GlaiveDamage(Check):
     name = "Glaives Taken (Midnight Falls)"
     description = ("Avoidable Glaive damage taken on Midnight Falls, counting only the live "
                   "portion of each pull (hits after the early-death cutoff are the wipe "
-                  "cascade, not avoidable play). Ranked by damage taken; hits shown too.")
+                  "cascade, not avoidable play). Tanks are excluded — they soak Glaives by "
+                  "design. Ranked by damage taken; hits shown too.")
     category = Category.SURVIVAL
     order = 40
 
@@ -53,8 +54,12 @@ class GlaiveDamage(Check):
         if ds.damage_taken.is_empty():
             return None  # not the Midnight Falls panel — no Glaive data fetched
 
+        live = _live_hits(ds)
+        tanks = tank_names(ds)  # tanks soak Glaives intentionally — drop them
+        if tanks:
+            live = live.filter(~pl.col("player").is_in(list(tanks)))
         agg = (
-            _live_hits(ds)
+            live
             .group_by("player")
             .agg(pl.col("amount").sum().alias("dmg"), pl.len().alias("hits"))
             .sort(["dmg", "hits"], descending=True)

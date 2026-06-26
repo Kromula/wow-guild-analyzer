@@ -4,6 +4,10 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import polars as pl
+
+from app.ingest.normalize import AnalysisDataset
+
 # Survival ability name lists (consumables + personal defensives). Editable
 # without code changes — see survival_abilities.json. Matching is case-insensitive
 # substring on the cast ability name.
@@ -39,3 +43,14 @@ def fmt_num(n: float) -> str:
 
 def fmt_rate(n: float, suffix: str) -> str:
     return f"{fmt_num(n)} {suffix}"
+
+
+def tank_names(ds: AnalysisDataset) -> set[str]:
+    """Players whose primary role across the window is tank, from WCL's own role
+    classification (the playerDetails buckets parsed in normalize). Shared by the
+    checks that treat tanks specially — they aren't expected to compete on damage
+    and they soak mechanics by design, so they distort damage-done and
+    damage-taken rankings alike."""
+    if ds.players.is_empty() or "role" not in ds.players.columns:
+        return set()
+    return set(ds.players.filter(pl.col("role") == "tank").get_column("player").to_list())
