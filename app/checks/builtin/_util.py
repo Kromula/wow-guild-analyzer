@@ -45,12 +45,22 @@ def fmt_rate(n: float, suffix: str) -> str:
     return f"{fmt_num(n)} {suffix}"
 
 
-def tank_names(ds: AnalysisDataset) -> set[str]:
-    """Players whose primary role across the window is tank, from WCL's own role
-    classification (the playerDetails buckets parsed in normalize). Shared by the
-    checks that treat tanks specially — they aren't expected to compete on damage
-    and they soak mechanics by design, so they distort damage-done and
-    damage-taken rankings alike."""
+def _role_names(ds: AnalysisDataset, role: str) -> set[str]:
+    """Players whose primary role across the window matches `role`, from WCL's own
+    classification (the playerDetails buckets parsed in normalize). Returns empty
+    when role data is unavailable, so callers can fall back gracefully."""
     if ds.players.is_empty() or "role" not in ds.players.columns:
         return set()
-    return set(ds.players.filter(pl.col("role") == "tank").get_column("player").to_list())
+    return set(ds.players.filter(pl.col("role") == role).get_column("player").to_list())
+
+
+def tank_names(ds: AnalysisDataset) -> set[str]:
+    """Tanks — they don't compete on damage and soak mechanics by design, so they
+    distort damage-done and damage-taken rankings alike."""
+    return _role_names(ds, "tank")
+
+
+def healer_names(ds: AnalysisDataset) -> set[str]:
+    """Healers — used to keep the Top Healers grid to actual healers rather than
+    DPS/tank off-healing or hybrid (e.g. Augmentation) output."""
+    return _role_names(ds, "healer")

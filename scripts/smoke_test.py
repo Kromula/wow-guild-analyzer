@@ -37,9 +37,12 @@ def synthetic() -> AnalysisDataset:
         "active_time_s": [300.0, 300.0, 300.0, 300.0, 300.0],
         "dps": [3.0e6, 2.5e6, 7.0e5, 1.0e6, 1.6e5],
     })
+    # Pewpew (a DPS Mage) has some off-healing; it must NOT appear in Top Healers —
+    # only the healer-spec Healbot should, after role filtering.
     healing = pl.DataFrame({
-        "report_code": ["AAAA"], "player": ["Healbot"], "player_class": ["Priest"],
-        "total": [8.0e8], "hps": [2.6e6],
+        "report_code": ["AAAA", "AAAA"], "player": ["Healbot", "Pewpew"],
+        "player_class": ["Priest", "Mage"],
+        "total": [8.0e8, 1.0e7], "hps": [2.6e6, 5.0e4],
     })
     casts = pl.DataFrame({
         "report_code": ["AAAA"] * 4,

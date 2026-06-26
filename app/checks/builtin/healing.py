@@ -4,7 +4,7 @@ from __future__ import annotations
 import polars as pl
 
 from app.checks.base import Category, Check, CheckResult, CheckRow, Severity
-from app.checks.builtin._util import fmt_rate
+from app.checks.builtin._util import fmt_rate, healer_names
 from app.checks.registry import register
 from app.ingest.normalize import AnalysisDataset
 
@@ -13,7 +13,9 @@ from app.ingest.normalize import AnalysisDataset
 class TopHealing(Check):
     id = "high-healing"
     name = "Top Healers"
-    description = "Players with the highest healing throughput (HPS) across the selected timeframe."
+    description = ("Healers ranked by healing throughput (HPS). Only healer-spec players are "
+                  "shown — DPS/tank off-healing and hybrid output are filtered out using the "
+                  "role data from the logs.")
     category = Category.PERFORMANCE
     order = 12
 
@@ -30,6 +32,13 @@ class TopHealing(Check):
             )
             .sort("total_healing", descending=True)
         )
+        # Keep only healer-spec players. Fall back to the unfiltered list if role
+        # data is unavailable or matches nobody, so the grid never goes blank.
+        healers = healer_names(ds)
+        if healers:
+            only_healers = agg.filter(pl.col("player").is_in(list(healers)))
+            if not only_healers.is_empty():
+                agg = only_healers
         rows = [
             CheckRow(player=r["player"], player_class=r["player_class"], value=r["hps"],
                      display=fmt_rate(r["hps"], "HPS"),
