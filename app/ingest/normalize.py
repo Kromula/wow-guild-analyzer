@@ -225,7 +225,7 @@ def build_dataset(raws: list[RawReport], tf: Timeframe) -> AnalysisDataset:
             parsed = []
             for e in entries:
                 name = e.get("name")
-                if not name:
+                if not name or (roster and name not in roster):
                     continue
                 t = e.get("deathTime", e.get("timestamp", e.get("startTime")))
                 ability = e.get("ability") or e.get("killingBlow") or {}
