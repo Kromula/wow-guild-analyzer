@@ -79,6 +79,10 @@ class Settings(BaseSettings):
     midnight_falls_encounter_id: int = 3183
     glaive_ability_id: int = 1254076
 
+    # Local store: directory for cached per-report data (Parquet + meta.json).
+    # Each finished raid log is immutable, so it's parsed once and reused.
+    data_dir: str = "data"
+
     # WCL endpoints
     wcl_token_url: str = "https://www.warcraftlogs.com/oauth/token"
     wcl_api_url: str = "https://www.warcraftlogs.com/api/v2/client"

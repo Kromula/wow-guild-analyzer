@@ -7,3 +7,4 @@ venv/
 *.parquet
 .pytest_cache/
 .DS_Store
+/data/

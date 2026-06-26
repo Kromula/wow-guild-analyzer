@@ -121,6 +121,8 @@ class ReportFrames:
     code: str
     title: str
     zone: str
+    start_time: int              # absolute report start (ms) — for dedup / completeness
+    end_time: int                # absolute report end (ms)
     is_raid_night: bool          # had target-difficulty fights (counts as an attendance night)
     present: list[str]           # players present this night (for attendance)
     players: pl.DataFrame        # player, player_class
@@ -284,6 +286,8 @@ def normalize_report(raw: RawReport) -> ReportFrames:
         code=raw.code,
         title=raw.title,
         zone=raw.zone,
+        start_time=raw.start_time,
+        end_time=raw.end_time,
         is_raid_night=bool(raw.fights),
         present=present,
         players=_df([{"player": k, "player_class": v} for k, v in player_map.items()], _PLAYERS_SCHEMA),
