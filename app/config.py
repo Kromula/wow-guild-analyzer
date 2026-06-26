@@ -28,6 +28,16 @@ class Settings(BaseSettings):
     exclude_mythic_plus: bool = True
     mythic_plus_zone_patterns: tuple[str, ...] = ("mythic+", "mythic plus")
 
+    # Restrict analysis to the current raid tier. Reports are returned newest-first,
+    # so older-tier reports are skipped at list time — before their (expensive)
+    # detail tables are ever fetched, which is the bulk of the WCL API cost and the
+    # cause of the "All" timeframe stalling. With current_tier_zone_id = 0 the tier
+    # is auto-detected from the newest qualifying report's WCL zone; set an explicit
+    # zone id to pin a tier. Set current_tier_only = False for the old cross-tier
+    # behaviour (heavier on the API, especially for "All").
+    current_tier_only: bool = True
+    current_tier_zone_id: int = 0
+
     # Only analyze fights at this raid difficulty. 1=LFR, 3=Normal, 4=Heroic,
     # 5=Mythic. Set to 0 to include all difficulties.
     raid_difficulty: int = 5

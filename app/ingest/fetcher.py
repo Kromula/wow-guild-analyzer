@@ -99,14 +99,25 @@ def _is_mythic_plus(report_meta: dict[str, Any]) -> bool:
     return any(p in zone_name for p in settings.mythic_plus_zone_patterns)
 
 
+def _zone_id(meta: dict[str, Any]) -> Any:
+    return (meta.get("zone") or {}).get("id")
+
+
 async def _list_reports(client: WCLClient, tf: Timeframe) -> list[dict[str, Any]]:
     # "All time" uses a higher cap (newest-first, so it covers the current tier);
     # a bounded window uses the normal cap. Both stay capped so a wide window
     # doesn't crawl the guild's entire history and exhaust WCL rate limits.
     cap = settings.max_reports_all_time if tf.is_all_time else settings.max_reports
+    # Current-tier scope: lock onto a zone id (explicit, or auto-detected from the
+    # newest qualifying report) and stop once we page past it. Reports are
+    # newest-first, so the current tier is the leading contiguous block — once the
+    # zone changes going back in time we're into an older tier and can stop,
+    # avoiding the expensive per-report detail fetches for off-tier reports.
+    target_zone = settings.current_tier_zone_id or None
     reports: list[dict[str, Any]] = []
     page = 1
-    while len(reports) < cap:
+    done = False
+    while len(reports) < cap and not done:
         data = await client.query(
             GUILD_REPORTS,
             {
@@ -123,7 +134,16 @@ async def _list_reports(client: WCLClient, tf: Timeframe) -> list[dict[str, Any]
         for meta in block["data"]:
             if settings.exclude_mythic_plus and _is_mythic_plus(meta):
                 continue  # raid-only: skip Mythic+ reports entirely (also saves API calls)
+            if settings.current_tier_only:
+                zid = _zone_id(meta)
+                if target_zone is None:
+                    target_zone = zid  # newest qualifying report defines the current tier
+                if zid != target_zone:
+                    done = True  # newest-first, so a zone change means we've left the current tier
+                    break
             reports.append(meta)
+            if len(reports) >= cap:
+                break
         if not block["has_more_pages"]:
             break
         page += 1
