@@ -9,13 +9,31 @@ import time
 from typing import Any
 
 import httpx
-from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
+from tenacity import retry, retry_if_exception_type, stop_after_attempt
 
 from app.config import settings
 
 
 class WCLError(RuntimeError):
     """Raised when the WarcraftLogs API returns an error or is misconfigured."""
+
+
+class WCLRateLimited(WCLError):
+    """429 from WarcraftLogs. Carries the server's Retry-After (seconds) when given
+    so the backoff can wait exactly that long instead of guessing."""
+
+    def __init__(self, message: str, retry_after: float | None = None) -> None:
+        super().__init__(message)
+        self.retry_after = retry_after
+
+
+def _wcl_wait(retry_state) -> float:
+    """Backoff that honors a 429's Retry-After when present, otherwise climbs
+    exponentially (2, 4, 8, … capped at 30s)."""
+    exc = retry_state.outcome.exception() if retry_state.outcome else None
+    if isinstance(exc, WCLRateLimited) and exc.retry_after:
+        return min(exc.retry_after, 60.0)
+    return min(2.0 * (2 ** max(0, retry_state.attempt_number - 1)), 30.0)
 
 
 class WCLClient:
@@ -53,8 +71,8 @@ class WCLClient:
 
     @retry(
         retry=retry_if_exception_type((httpx.TransportError, WCLError)),
-        wait=wait_exponential(multiplier=1, min=2, max=20),
-        stop=stop_after_attempt(4),
+        wait=_wcl_wait,
+        stop=stop_after_attempt(6),
         reraise=True,
     )
     async def query(self, query: str, variables: dict[str, Any]) -> dict[str, Any]:
@@ -70,7 +88,11 @@ class WCLClient:
             self._token = None
             raise WCLError("Unauthorized; refreshing token.")
         if resp.status_code == 429:
-            raise WCLError("Rate limited by WarcraftLogs (429); backing off.")
+            # Point budget exhausted. Honor Retry-After if the server sent one so
+            # the backoff waits exactly long enough rather than guessing.
+            ra = resp.headers.get("Retry-After")
+            raise WCLRateLimited("Rate limited by WarcraftLogs (429); backing off.",
+                                 retry_after=float(ra) if ra and ra.replace(".", "", 1).isdigit() else None)
         if resp.status_code != 200:
             raise WCLError(f"GraphQL request failed ({resp.status_code}): {resp.text}")
 

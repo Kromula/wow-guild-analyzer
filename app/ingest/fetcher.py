@@ -62,6 +62,38 @@ class RawReport:
     damage_taken_by_fight: dict[int, Any] = field(default_factory=dict)
 
 
+def _to_float(v: object, default: float = 0.0) -> float:
+    try:
+        return float(v)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return default
+
+
+def _death_ts(entry: dict) -> float:
+    """Absolute timestamp (ms) of a death-table entry, tolerating field naming."""
+    return _to_float(entry.get("deathTime", entry.get("timestamp", entry.get("startTime"))))
+
+
+def _fight_id_for_ts(ts: float, bounds: dict[int, tuple[float, float]]) -> int | None:
+    """Which fight's [start, end] window contains this absolute timestamp."""
+    for fid, (start, end) in bounds.items():
+        if start <= ts <= end:
+            return fid
+    return None
+
+
+def _bucket_events(items: list[dict], bounds: dict[int, tuple[float, float]], ts_of) -> dict[int, list]:
+    """Split a flat per-report event/death list into per-fight buckets by
+    timestamp. Lets us fetch once per report and group client-side, instead of
+    one API query per fight. Every fight id gets an entry (possibly empty)."""
+    buckets: dict[int, list] = {fid: [] for fid in bounds}
+    for it in items:
+        fid = _fight_id_for_ts(ts_of(it), bounds)
+        if fid is not None:
+            buckets[fid].append(it)
+    return buckets
+
+
 def _is_mythic_plus(report_meta: dict[str, Any]) -> bool:
     zone_name = ((report_meta.get("zone") or {}).get("name") or "").lower()
     return any(p in zone_name for p in settings.mythic_plus_zone_patterns)
@@ -197,11 +229,8 @@ async def fetch_dataset(tf: Timeframe) -> list[RawReport]:
 
             table_jobs.append(_assign_player_details(guarded, client, raw, span_start, span_end, fight_ids))
 
-            for fight in encounter_fights:
-                table_jobs.append(
-                    _assign_deaths(guarded, client, raw, fight["id"],
-                                   float(fight["startTime"]), float(fight["endTime"]))
-                )
+            fight_bounds = {f["id"]: (float(f["startTime"]), float(f["endTime"])) for f in encounter_fights}
+            table_jobs.append(_assign_deaths(guarded, client, raw, fight_bounds))
 
         await asyncio.gather(*table_jobs)
         return raws
@@ -219,5 +248,18 @@ async def _assign_player_details(guarded, client, raw: RawReport,
     raw.player_details = await guarded(_fetch_player_details(client, raw.code, start, end, fight_ids))
 
 
-async def _assign_deaths(guarded, client, raw: RawReport, fight_id: int, start: float, end: float) -> None:
-    raw.deaths_by_fight[fight_id] = await guarded(_fetch_table(client, raw.code, "Deaths", start, end, [fight_id]))
+async def _assign_deaths(guarded, client, raw: RawReport,
+                         fight_bounds: dict[int, tuple[float, float]]) -> None:
+    """One Deaths fetch for the whole report, split into per-fight buckets by
+    death timestamp — replaces the previous one-query-per-fight fan-out. Each
+    bucket is wrapped to match the table shape the normalizer already parses."""
+    if not fight_bounds:
+        return
+    from app.ingest.normalize import _entries  # local import avoids an import cycle
+    ids = list(fight_bounds)
+    span_s = min(s for s, _ in fight_bounds.values())
+    span_e = max(e for _, e in fight_bounds.values())
+    payload = await guarded(_fetch_table(client, raw.code, "Deaths", span_s, span_e, ids))
+    buckets = _bucket_events(_entries(payload), fight_bounds, _death_ts)
+    for fid, entries in buckets.items():
+        raw.deaths_by_fight[fid] = {"data": {"entries": entries}}
