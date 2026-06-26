@@ -108,12 +108,18 @@ async def _list_reports(client: WCLClient, tf: Timeframe) -> list[dict[str, Any]
     # a bounded window uses the normal cap. Both stay capped so a wide window
     # doesn't crawl the guild's entire history and exhaust WCL rate limits.
     cap = settings.max_reports_all_time if tf.is_all_time else settings.max_reports
-    # Current-tier scope: lock onto a zone id (explicit, or auto-detected from the
-    # newest qualifying report) and stop once we page past it. Reports are
-    # newest-first, so the current tier is the leading contiguous block — once the
-    # zone changes going back in time we're into an older tier and can stop,
-    # avoiding the expensive per-report detail fetches for off-tier reports.
-    target_zone = settings.current_tier_zone_id or None
+
+    # Current-tier scope (see config). A tier can span several raids, so we track a
+    # SET of zones, not one. Explicit ids pin the set; otherwise it's auto-detected
+    # from every raid zone logged within the last current_tier_active_days of the
+    # newest report. Older reports of those zones are still kept (whole tier), and
+    # we stop paging once a full page has no current-tier reports — by then we've
+    # reached older tiers, so there's no point fetching their detail tables.
+    explicit = set(settings.current_tier_zone_ids)
+    tier_zones: set = set(explicit)
+    active_cutoff_ms: float | None = None  # auto-detect window, seeded from newest report
+    active_window_ms = settings.current_tier_active_days * 86_400_000
+
     reports: list[dict[str, Any]] = []
     page = 1
     done = False
@@ -131,21 +137,31 @@ async def _list_reports(client: WCLClient, tf: Timeframe) -> list[dict[str, Any]
             },
         )
         block = data["reportData"]["reports"]
+        page_had_in_tier = False
         for meta in block["data"]:
             if settings.exclude_mythic_plus and _is_mythic_plus(meta):
                 continue  # raid-only: skip Mythic+ reports entirely (also saves API calls)
             if settings.current_tier_only:
                 zid = _zone_id(meta)
-                if target_zone is None:
-                    target_zone = zid  # newest qualifying report defines the current tier
-                if zid != target_zone:
-                    done = True  # newest-first, so a zone change means we've left the current tier
-                    break
+                if not explicit and active_cutoff_ms is None:
+                    active_cutoff_ms = _to_float(meta.get("startTime")) - active_window_ms
+                in_active = (not explicit and active_cutoff_ms is not None
+                             and _to_float(meta.get("startTime")) >= active_cutoff_ms)
+                if in_active:
+                    tier_zones.add(zid)  # recent enough to define the current tier
+                if not (in_active or zid in tier_zones):
+                    continue  # an older tier's zone — skip
+                page_had_in_tier = True
             reports.append(meta)
             if len(reports) >= cap:
                 break
         if not block["has_more_pages"]:
             break
+        # Newest-first: once we've collected current-tier reports and then hit a
+        # whole page with none, we've paged back past the tier. Stop — this bounds
+        # the "All" scan instead of crawling the guild's entire history.
+        if settings.current_tier_only and reports and block["data"] and not page_had_in_tier:
+            done = True
         page += 1
     return reports[:cap]
 

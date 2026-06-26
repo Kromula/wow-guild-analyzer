@@ -31,12 +31,20 @@ class Settings(BaseSettings):
     # Restrict analysis to the current raid tier. Reports are returned newest-first,
     # so older-tier reports are skipped at list time — before their (expensive)
     # detail tables are ever fetched, which is the bulk of the WCL API cost and the
-    # cause of the "All" timeframe stalling. With current_tier_zone_id = 0 the tier
-    # is auto-detected from the newest qualifying report's WCL zone; set an explicit
-    # zone id to pin a tier. Set current_tier_only = False for the old cross-tier
-    # behaviour (heavier on the API, especially for "All").
+    # cause of the "All" timeframe stalling.
+    #
+    # A tier can span MULTIPLE raids (e.g. a main raid plus a later mini-raid), so
+    # the scope is a *set* of zones, not one. With current_tier_zone_ids empty, the
+    # set is auto-detected: every raid zone the guild has logged within the last
+    # current_tier_active_days defines "the current tier", and older reports of
+    # those same zones are kept too (so the whole tier is covered). Paging stops
+    # once a full page has no current-tier reports — i.e. we've reached older tiers.
+    # Set current_tier_zone_ids to an explicit list of WCL zone ids to pin the tier
+    # precisely; set current_tier_only = False for the old cross-tier behaviour
+    # (heavier on the API, especially for "All").
     current_tier_only: bool = True
-    current_tier_zone_id: int = 0
+    current_tier_zone_ids: tuple[int, ...] = ()
+    current_tier_active_days: int = 45
 
     # Only analyze fights at this raid difficulty. 1=LFR, 3=Normal, 4=Heroic,
     # 5=Mythic. Set to 0 to include all difficulties.
