@@ -24,6 +24,11 @@ def _lock_for(days: int) -> asyncio.Lock:
     return _locks.setdefault(days, asyncio.Lock())
 
 
+def _timeframe(days: int) -> Timeframe:
+    """A rolling window, or all-time when days is 0."""
+    return Timeframe.all_time() if days <= 0 else Timeframe.last_n_days(days)
+
+
 async def get_dataset(days: int, *, force: bool = False):
     now = time.time()
     cached = _cache.get(days)
@@ -34,7 +39,7 @@ async def get_dataset(days: int, *, force: bool = False):
         cached = _cache.get(days)  # re-check after acquiring lock
         if cached and not force and time.time() - cached[0] < _CACHE_TTL_S:
             return cached[1]
-        tf = Timeframe.last_n_days(days)
+        tf = _timeframe(days)
         raws = await fetch_dataset(tf)
         ds = build_dataset(raws, tf)
         _cache[days] = (time.time(), ds)
@@ -73,7 +78,7 @@ async def list_bosses(days: int, *, force: bool = False) -> dict:
     if cached and not force and time.time() - cached[0] < _CACHE_TTL_S:
         raids = cached[1]
     else:
-        raids = await discover_bosses(Timeframe.last_n_days(days))
+        raids = await discover_bosses(_timeframe(days))
         _boss_list_cache[days] = (time.time(), raids)
     return {"timeframe_days": days, "raids": raids}
 
@@ -83,7 +88,7 @@ async def boss_panel(days: int, encounter_id: int, *, force: bool = False) -> di
     cached = _boss_cache.get(key)
     if cached and not force and time.time() - cached[0] < _CACHE_TTL_S:
         return cached[1]
-    panel = await analyze_boss(Timeframe.last_n_days(days), encounter_id)
+    panel = await analyze_boss(_timeframe(days), encounter_id)
     panel["timeframe_days"] = days
     _boss_cache[key] = (time.time(), panel)
     return panel

@@ -23,7 +23,7 @@ _CONCURRENCY = 5
 
 @dataclass
 class Timeframe:
-    days: int
+    days: int          # rolling window length; 0 means "all time" (no lower bound)
     start_ms: int
     end_ms: int
 
@@ -31,6 +31,16 @@ class Timeframe:
     def last_n_days(cls, days: int) -> "Timeframe":
         now_ms = int(time.time() * 1000)
         return cls(days=days, start_ms=now_ms - days * 86_400_000, end_ms=now_ms)
+
+    @classmethod
+    def all_time(cls) -> "Timeframe":
+        """Every log the guild has, regardless of date — bounded only by WCL
+        pagination, not a rolling window or max_reports."""
+        return cls(days=0, start_ms=0, end_ms=int(time.time() * 1000))
+
+    @property
+    def is_all_time(self) -> bool:
+        return self.days <= 0
 
 
 @dataclass
@@ -58,9 +68,13 @@ def _is_mythic_plus(report_meta: dict[str, Any]) -> bool:
 
 
 async def _list_reports(client: WCLClient, tf: Timeframe) -> list[dict[str, Any]]:
+    # "All time" uses a higher cap (newest-first, so it covers the current tier);
+    # a bounded window uses the normal cap. Both stay capped so a wide window
+    # doesn't crawl the guild's entire history and exhaust WCL rate limits.
+    cap = settings.max_reports_all_time if tf.is_all_time else settings.max_reports
     reports: list[dict[str, Any]] = []
     page = 1
-    while len(reports) < settings.max_reports:
+    while len(reports) < cap:
         data = await client.query(
             GUILD_REPORTS,
             {
@@ -81,7 +95,7 @@ async def _list_reports(client: WCLClient, tf: Timeframe) -> list[dict[str, Any]
         if not block["has_more_pages"]:
             break
         page += 1
-    return reports[: settings.max_reports]
+    return reports[:cap]
 
 
 async def _load_report_detail(client: WCLClient, report_meta: dict[str, Any]) -> RawReport:

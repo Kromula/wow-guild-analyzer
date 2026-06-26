@@ -28,7 +28,7 @@ async def checks() -> dict:
 
 
 @router.get("/bosses")
-async def bosses(days: int = Query(default=14, ge=1, le=180), force: bool = Query(default=False)) -> dict:
+async def bosses(days: int = Query(default=14, ge=0, le=180), force: bool = Query(default=False)) -> dict:
     if not settings.configured:
         raise HTTPException(status_code=409, detail="App is not configured. See README / .env.example.")
     try:
@@ -40,7 +40,7 @@ async def bosses(days: int = Query(default=14, ge=1, le=180), force: bool = Quer
 @router.get("/boss")
 async def boss(
     encounter_id: int = Query(..., ge=1),
-    days: int = Query(default=14, ge=1, le=180),
+    days: int = Query(default=14, ge=0, le=180),  # 0 = all time
     force: bool = Query(default=False),
 ) -> dict:
     if not settings.configured:
@@ -53,7 +53,7 @@ async def boss(
 
 @router.get("/analyze")
 async def analyze(
-    days: int = Query(default=14, ge=1, le=180),
+    days: int = Query(default=14, ge=0, le=180),  # 0 = all time
     only: str | None = Query(default=None, description="comma-separated check ids"),
     force: bool = Query(default=False),
 ) -> dict:

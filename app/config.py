@@ -16,6 +16,11 @@ class Settings(BaseSettings):
 
     default_timeframe_days: int = 14
     max_reports: int = 40
+    # Cap for the "All" timeframe. Reports are returned newest-first, so the most
+    # recent N span the whole current tier (where current bosses' pulls all live)
+    # without trying to crawl the guild's entire multi-year history — which would
+    # be thousands of reports and hit WCL rate limits. Raise if you need deeper.
+    max_reports_all_time: int = 250
 
     # Restrict analysis to raid content by excluding Mythic+ reports (their DPS/
     # deaths aren't comparable to raid). Matches report zone names against the

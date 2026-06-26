@@ -57,7 +57,7 @@ function renderStats() {
     ${stat(d.fight_count, "Boss pulls")}
     ${stat(d.player_count, "Players")}
     ${stat(d.checks.length, "Checks run")}
-    ${stat(state.days + "d", "Window")}`;
+    ${stat(state.days ? state.days + "d" : "All", "Window")}`;
   const f = d.filters || {};
   const att = Math.round((f.min_attendance_pct || 0) * 100);
   const bits = [
@@ -195,7 +195,7 @@ function renderBossPanel(d) {
     <div class="boss-hero">
       <div>
         <h2>${escapeHtml(b.name)}</h2>
-        <div class="zone">${escapeHtml(b.zone)} · last ${d.timeframe_days}d</div>
+        <div class="zone">${escapeHtml(b.zone)} · ${d.timeframe_days ? "last " + d.timeframe_days + "d" : "all logs"}</div>
       </div>
       <div class="metrics">
         ${metric(b.pulls, "Pulls")}
