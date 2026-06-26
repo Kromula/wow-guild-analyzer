@@ -1,7 +1,10 @@
-"""Orchestration: fetch -> normalize -> run checks, with a small TTL cache.
+"""Orchestration: read the local store -> assemble -> run checks, with a small
+TTL cache.
 
-The cache is keyed by timeframe so flipping between 7/14/30 days is instant after
-the first pull, while a manual refresh (or TTL expiry) re-queries WarcraftLogs.
+The overall analysis is served from the on-disk store (populated by `sync_logs`,
+the manual "Update Logs" action), so normal page loads make zero WarcraftLogs
+calls. Before the first sync the store is empty, so we fall back to a live fetch
+once. The cache is keyed by timeframe so flipping between 7/14/30 days is instant.
 """
 from __future__ import annotations
 
@@ -11,7 +14,7 @@ import time
 from app import store
 from app.checks import list_checks, run_all
 from app.config import settings
-from app.ingest import (Timeframe, build_dataset, fetch_dataset, fetch_report_list,
+from app.ingest import (Timeframe, assemble, build_dataset, fetch_dataset, fetch_report_list,
                         fetch_reports, normalize_report)
 from app.ingest.boss import analyze_boss, discover_bosses
 
@@ -31,6 +34,14 @@ def _timeframe(days: int) -> Timeframe:
     return Timeframe.all_time() if days <= 0 else Timeframe.last_n_days(days)
 
 
+def _frames_in_window(tf: Timeframe):
+    """Stored per-report frames whose report falls in the timeframe window."""
+    frames = store.load_reports(store.stored_codes())
+    if tf.is_all_time:
+        return frames
+    return [f for f in frames if tf.start_ms <= f.start_time <= tf.end_ms]
+
+
 async def get_dataset(days: int, *, force: bool = False):
     now = time.time()
     cached = _cache.get(days)
@@ -42,8 +53,13 @@ async def get_dataset(days: int, *, force: bool = False):
         if cached and not force and time.time() - cached[0] < _CACHE_TTL_S:
             return cached[1]
         tf = _timeframe(days)
-        raws = await fetch_dataset(tf)
-        ds = build_dataset(raws, tf)
+        if store.stored_codes():
+            # Served entirely from the local store — no WarcraftLogs calls.
+            ds = assemble(_frames_in_window(tf), tf)
+        else:
+            # Store empty (no sync yet) — fall back to a one-off live fetch so the
+            # app still works before the first "Update Logs".
+            ds = build_dataset(await fetch_dataset(tf), tf)
         _cache[days] = (time.time(), ds)
         return ds
 
@@ -101,6 +117,8 @@ async def sync_logs(*, force: bool = False) -> dict:
         now = time.time()
         for raw in raws:
             store.store_report(normalize_report(raw), fetched_at=now)
+        if raws:
+            _invalidate_caches()  # new data — drop cached datasets/boss panels
         return {
             "fetched": len(raws),
             "skipped": len(metas) - len(to_fetch),
@@ -108,6 +126,12 @@ async def sync_logs(*, force: bool = False) -> dict:
             "stored_total": len(store.stored_codes()),
             "last_synced": last_synced(),
         }
+
+
+def _invalidate_caches() -> None:
+    _cache.clear()
+    _boss_list_cache.clear()
+    _boss_cache.clear()
 
 
 def last_synced() -> float | None:
