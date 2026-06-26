@@ -8,9 +8,11 @@ from __future__ import annotations
 import asyncio
 import time
 
+from app import store
 from app.checks import list_checks, run_all
 from app.config import settings
-from app.ingest import Timeframe, build_dataset, fetch_dataset
+from app.ingest import (Timeframe, build_dataset, fetch_dataset, fetch_report_list,
+                        fetch_reports, normalize_report)
 from app.ingest.boss import analyze_boss, discover_bosses
 
 _DIFFICULTY_NAMES = {0: "All", 1: "LFR", 3: "Normal", 4: "Heroic", 5: "Mythic"}
@@ -66,6 +68,52 @@ async def analyze(days: int, *, only: list[str] | None = None, force: bool = Fal
 
 def available_checks() -> list[dict]:
     return list_checks()
+
+
+# ── log sync (manual "Update Logs") ───────────────────────────────────────────
+_sync_lock = asyncio.Lock()
+
+
+def _needs_fetch(live_meta: dict, *, force: bool) -> bool:
+    """True if a current-tier report isn't cached, or grew since we cached it.
+
+    A report logged mid-raid keeps accumulating pulls; its `endTime` grows on
+    later listings, so endTime > stored end_time means there's new data to pull."""
+    if force:
+        return True
+    stored = store.report_meta(live_meta["code"])
+    if stored is None:
+        return True
+    live_end, stored_end = live_meta.get("endTime"), stored.get("end_time")
+    return bool(live_end and stored_end and live_end > stored_end)
+
+
+async def sync_logs(*, force: bool = False) -> dict:
+    """Pull current-tier logs into the local store, fetching only new/grown reports.
+
+    Cheap list step first, then heavy detail/table fetches for just the reports
+    that are missing or have grown. Serialized by a lock so two clicks don't
+    double-fetch."""
+    async with _sync_lock:
+        metas = await fetch_report_list(Timeframe.all_time())
+        to_fetch = [m for m in metas if _needs_fetch(m, force=force)]
+        raws = await fetch_reports(to_fetch)
+        now = time.time()
+        for raw in raws:
+            store.store_report(normalize_report(raw), fetched_at=now)
+        return {
+            "fetched": len(raws),
+            "skipped": len(metas) - len(to_fetch),
+            "current_tier_reports": len(metas),
+            "stored_total": len(store.stored_codes()),
+            "last_synced": last_synced(),
+        }
+
+
+def last_synced() -> float | None:
+    """Most recent fetch time across stored reports (persists across restarts)."""
+    times = [m.get("fetched_at") for m in store.all_meta() if m.get("fetched_at")]
+    return max(times) if times else None
 
 
 # ── boss drill-down (separate, on-demand fetches) ─────────────────────────────

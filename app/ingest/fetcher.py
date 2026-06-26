@@ -235,41 +235,76 @@ async def _fetch_events(client: WCLClient, code: str, data_type: str, start: flo
     return out
 
 
-async def fetch_dataset(tf: Timeframe) -> list[RawReport]:
-    """Return fully-populated RawReports for the timeframe."""
-    if not settings.configured:
-        raise RuntimeError("App not configured. Fill in .env (see .env.example / README.md).")
+def _report_table_jobs(guarded, client: WCLClient, raw: RawReport) -> list:
+    """Coroutines that populate one report's Damage/Healing/Casts/playerDetails/Deaths."""
+    encounter_fights = [f for f in raw.fights if f.get("encounterID")]
+    if not encounter_fights:
+        return []
+    fight_ids = [f["id"] for f in encounter_fights]
+    span_start = float(min(f["startTime"] for f in encounter_fights))
+    span_end = float(max(f["endTime"] for f in encounter_fights))
+    jobs = [_assign_table(guarded, client, raw, dt, span_start, span_end, fight_ids)
+            for dt in ("DamageDone", "Healing", "Casts")]
+    jobs.append(_assign_player_details(guarded, client, raw, span_start, span_end, fight_ids))
+    fight_bounds = {f["id"]: (float(f["startTime"]), float(f["endTime"])) for f in encounter_fights}
+    jobs.append(_assign_deaths(guarded, client, raw, fight_bounds))
+    return jobs
 
-    client = WCLClient()
+
+async def _fetch_populated(metas: list[dict], client: WCLClient, guarded) -> list[RawReport]:
+    """Load detail (fights + roster) and all tables for each report meta."""
+    raws = await asyncio.gather(*(guarded(_load_report_detail(client, m)) for m in metas))
+    table_jobs = []
+    for raw in raws:
+        table_jobs.extend(_report_table_jobs(guarded, client, raw))
+    await asyncio.gather(*table_jobs)
+    return raws
+
+
+def _guarded_factory():
     sem = asyncio.Semaphore(_CONCURRENCY)
 
     async def guarded(coro):
         async with sem:
             return await coro
 
+    return guarded
+
+
+async def fetch_dataset(tf: Timeframe) -> list[RawReport]:
+    """Return fully-populated RawReports for the timeframe."""
+    if not settings.configured:
+        raise RuntimeError("App not configured. Fill in .env (see .env.example / README.md).")
+    client = WCLClient()
     try:
-        report_metas = await _list_reports(client, tf)
-        raws = await asyncio.gather(*(guarded(_load_report_detail(client, m)) for m in report_metas))
+        metas = await _list_reports(client, tf)
+        return await _fetch_populated(metas, client, _guarded_factory())
+    finally:
+        await client.aclose()
 
-        table_jobs = []
-        for raw in raws:
-            encounter_fights = [f for f in raw.fights if f.get("encounterID")]
-            if not encounter_fights:
-                continue
-            fight_ids = [f["id"] for f in encounter_fights]
-            span_start = float(min(f["startTime"] for f in encounter_fights))
-            span_end = float(max(f["endTime"] for f in encounter_fights))
 
-            for data_type in ("DamageDone", "Healing", "Casts"):
-                table_jobs.append(_assign_table(guarded, client, raw, data_type, span_start, span_end, fight_ids))
+async def fetch_report_list(tf: Timeframe) -> list[dict]:
+    """Current-tier report metadata (code/title/zone/start/end) — the cheap list step.
 
-            table_jobs.append(_assign_player_details(guarded, client, raw, span_start, span_end, fight_ids))
+    Used by sync to diff against the local store before fetching anything heavy."""
+    if not settings.configured:
+        raise RuntimeError("App not configured. Fill in .env (see .env.example / README.md).")
+    client = WCLClient()
+    try:
+        return await _list_reports(client, tf)
+    finally:
+        await client.aclose()
 
-            fight_bounds = {f["id"]: (float(f["startTime"]), float(f["endTime"])) for f in encounter_fights}
-            table_jobs.append(_assign_deaths(guarded, client, raw, fight_bounds))
 
-        await asyncio.gather(*table_jobs)
-        return raws
+async def fetch_reports(metas: list[dict]) -> list[RawReport]:
+    """Fully populate just the given reports (detail + all tables). For incremental sync."""
+    if not metas:
+        return []
+    if not settings.configured:
+        raise RuntimeError("App not configured. Fill in .env (see .env.example / README.md).")
+    client = WCLClient()
+    try:
+        return await _fetch_populated(metas, client, _guarded_factory())
     finally:
         await client.aclose()
 
