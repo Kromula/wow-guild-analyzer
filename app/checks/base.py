@@ -68,6 +68,9 @@ class Check(ABC):
     category: Category = Category.OTHER
     #: lower runs first; purely cosmetic ordering on the dashboard
     order: int = 100
+    #: only meaningful for a single encounter — shown on the boss panel, hidden on
+    #: the overall page (where every boss's data is blended). See run_all(boss_view).
+    boss_only: bool = False
 
     @abstractmethod
     def run(self, ds: AnalysisDataset) -> CheckResult | None:

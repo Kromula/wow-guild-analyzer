@@ -136,7 +136,7 @@ async def analyze_boss(tf: Timeframe, encounter_id: int) -> dict:
             r.fights = [f for f in r.fights if f.get("encounterID") == encounter_id]
 
         ds = build_dataset(relevant, tf)
-        results = run_all(ds)
+        results = run_all(ds, boss_view=True)
         return {"boss": summary, "checks": [r.to_dict() for r in results]}
     finally:
         await client.aclose()

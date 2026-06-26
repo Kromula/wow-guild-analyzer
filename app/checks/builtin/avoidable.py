@@ -49,6 +49,7 @@ class GlaiveDamage(Check):
                   "design. Ranked by damage taken; hits shown too.")
     category = Category.SURVIVAL
     order = 40
+    boss_only = True
 
     def run(self, ds: AnalysisDataset) -> CheckResult | None:
         if ds.damage_taken.is_empty():

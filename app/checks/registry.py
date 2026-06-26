@@ -54,13 +54,16 @@ def list_checks() -> list[dict]:
     return items
 
 
-def run_all(ds: AnalysisDataset, only: list[str] | None = None) -> list[CheckResult]:
+def run_all(ds: AnalysisDataset, only: list[str] | None = None,
+            boss_view: bool = False) -> list[CheckResult]:
     discover()
     results: list[CheckResult] = []
     selected = sorted(_REGISTRY.values(), key=lambda c: (c.order, c.id))
     for cls in selected:
         if only and cls.id not in only:
             continue
+        if cls.boss_only and not boss_view:
+            continue  # encounter-specific check; skip on the blended overall page
         try:
             res = cls().run(ds)
             if res is not None:  # None = check opted out of this view (e.g. no data)

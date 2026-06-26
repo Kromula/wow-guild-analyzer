@@ -92,7 +92,8 @@ def main() -> int:
 
     ds = synthetic()
     print("\nRunning checks on synthetic data:\n")
-    results = run_all(ds)
+    # boss_view=True so boss-only checks (Glaives, Top Death Causes) run too.
+    results = run_all(ds, boss_view=True)
     assert results, "no results produced"
     for r in results:
         d = r.to_dict()
