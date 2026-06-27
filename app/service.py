@@ -16,7 +16,7 @@ from app.checks import list_checks, run_all
 from app.config import settings
 from app.ingest import (Timeframe, assemble, build_dataset, fetch_dataset, fetch_report_list,
                         fetch_reports, normalize_report)
-from app.ingest.boss import analyze_boss, discover_bosses
+from app.ingest.boss import analyze_boss, bosses_from_frames, discover_bosses
 
 _DIFFICULTY_NAMES = {0: "All", 1: "LFR", 3: "Normal", 4: "Heroic", 5: "Mythic"}
 
@@ -140,6 +140,11 @@ def last_synced() -> float | None:
     return max(times) if times else None
 
 
+def sync_status() -> dict:
+    """Store summary for the UI (last sync time + how many reports are cached)."""
+    return {"last_synced": last_synced(), "stored_reports": len(store.stored_codes())}
+
+
 # ── boss drill-down (separate, on-demand fetches) ─────────────────────────────
 _boss_list_cache: dict[int, tuple[float, list]] = {}
 _boss_cache: dict[tuple[int, int], tuple[float, dict]] = {}
@@ -149,8 +154,12 @@ async def list_bosses(days: int, *, force: bool = False) -> dict:
     cached = _boss_list_cache.get(days)
     if cached and not force and time.time() - cached[0] < _CACHE_TTL_S:
         raids = cached[1]
+    elif store.stored_codes():
+        # Built from the store (no WCL) — the boss dropdown loads instantly.
+        raids = bosses_from_frames(_frames_in_window(_timeframe(days)))
+        _boss_list_cache[days] = (time.time(), raids)
     else:
-        raids = await discover_bosses(_timeframe(days))
+        raids = await discover_bosses(_timeframe(days))  # empty store: one-off live fallback
         _boss_list_cache[days] = (time.time(), raids)
     return {"timeframe_days": days, "raids": raids}
 

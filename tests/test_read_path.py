@@ -77,6 +77,20 @@ def test_empty_store_falls_back_to_live(monkeypatch):
     assert ds.fights.height == 0
 
 
+def test_list_bosses_from_store(monkeypatch):
+    monkeypatch.setattr(service, "discover_bosses",
+                        lambda tf: (_ for _ in ()).throw(AssertionError("no live discovery")))
+    # Two fights of encounter 9999 across two reports -> 2 pulls, grouped under the zone.
+    _store_report("a", age_days=1, fight_ids=(1,))
+    _store_report("b", age_days=2, fight_ids=(2,))
+    data = asyncio.run(service.list_bosses(0))
+    raids = data["raids"]
+    assert len(raids) == 1
+    assert raids[0]["zone"] == "VS / DR / MQD"
+    boss = raids[0]["bosses"][0]
+    assert boss["encounter_id"] == 9999 and boss["pulls"] == 2
+
+
 def test_sync_invalidates_dataset_cache(monkeypatch):
     # Prime the cache with a stale dataset object.
     service._cache[0] = (time.time(), "STALE")

@@ -43,7 +43,8 @@ class AnalysisDataset:
 # Per-frame schemas, declared once so per-report frames built independently still
 # concatenate cleanly in `assemble` (no dtype-inference drift between reports).
 _FIGHTS_SCHEMA = {"report_code": pl.Utf8, "fight_id": pl.Int64, "name": pl.Utf8,
-                  "difficulty": pl.Int64, "kill": pl.Boolean, "duration_s": pl.Float64}
+                  "encounter_id": pl.Int64, "difficulty": pl.Int64, "kill": pl.Boolean,
+                  "duration_s": pl.Float64}
 _DAMAGE_SCHEMA = {"report_code": pl.Utf8, "player": pl.Utf8, "player_class": pl.Utf8,
                   "total": pl.Float64, "active_time_s": pl.Float64, "dps": pl.Float64}
 _HEALING_SCHEMA = {"report_code": pl.Utf8, "player": pl.Utf8, "player_class": pl.Utf8,
@@ -170,6 +171,7 @@ def normalize_report(raw: RawReport) -> ReportFrames:
             "report_code": raw.code,
             "fight_id": f["id"],
             "name": f.get("name", "?"),
+            "encounter_id": f.get("encounterID"),
             "difficulty": f.get("difficulty"),
             "kill": bool(f.get("kill")),
             "duration_s": max(0.0, (f["endTime"] - f["startTime"]) / 1000.0),
@@ -339,7 +341,8 @@ def _canonical(cluster: list[tuple]) -> str:
     return sorted(cluster, key=lambda c: (-c[0], -c[1], c[2]))[0][2]
 
 
-def _dedupe(frames: list[ReportFrames]) -> list[ReportFrames]:
+def dedupe_frames(frames: list[ReportFrames]) -> list[ReportFrames]:
+    """Drop duplicate same-night logs, keeping one canonical report per cluster."""
     if not settings.dedupe_overlapping_logs or len(frames) < 2:
         return frames
     keep = canonical_report_codes(
@@ -387,7 +390,7 @@ def assemble(frames: list[ReportFrames], tf: Timeframe) -> AnalysisDataset:
     This is where window-wide decisions live: duplicate-night de-duplication,
     the core-raider attendance filter, the per-player primary-role pick, and
     concatenation."""
-    frames = _dedupe(frames)
+    frames = dedupe_frames(frames)
     report_rows = [{"code": f.code, "title": f.title, "zone": f.zone} for f in frames]
 
     # First-seen class per player, and role fight-counts, accumulated across reports.

@@ -213,6 +213,53 @@ function renderBossPanel(d) {
 const metric = (num, lbl, cls = "") =>
   `<div class="metric ${cls}"><div class="m-num">${num}</div><div class="m-lbl">${lbl}</div></div>`;
 
+// ── log sync ("Update Logs") ──────────────────────────────
+function fmtAgo(ts) {
+  if (!ts) return "never synced";
+  const s = Math.max(0, Date.now() / 1000 - ts);
+  if (s < 90) return "synced just now";
+  const m = Math.round(s / 60);
+  if (m < 90) return `synced ${m}m ago`;
+  const h = Math.round(m / 60);
+  if (h < 36) return `synced ${h}h ago`;
+  return `synced ${Math.round(h / 24)}d ago`;
+}
+
+async function refreshSyncStatus() {
+  try {
+    const res = await fetch("/api/status");
+    const sync = (await res.json()).sync || {};
+    const reports = sync.stored_reports ? ` · ${sync.stored_reports} reports` : "";
+    $("#last-synced").textContent = fmtAgo(sync.last_synced) + reports;
+  } catch { /* leave label as-is */ }
+}
+
+async function updateLogs() {
+  const btn = $("#update-logs");
+  btn.disabled = true;
+  showOverlay("Updating logs from WarcraftLogs… this can take a minute.");
+  try {
+    const res = await fetch("/api/update-logs", { method: "POST" });
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      hideOverlay();
+      renderError(body.detail || `Update failed (${res.status})`);
+      btn.disabled = false;
+      return;
+    }
+    await refreshSyncStatus();
+  } catch (e) {
+    hideOverlay();
+    renderError(String(e));
+    btn.disabled = false;
+    return;
+  }
+  btn.disabled = false;
+  // Re-read the freshly-synced store (these manage their own overlay).
+  loadBosses(false);
+  reloadCurrentView(false);
+}
+
 // ── wire up controls ──────────────────────────────────────
 function reloadCurrentView(force) {
   if (state.encounter) showBoss(state.encounter, force);
@@ -228,6 +275,7 @@ $("#timeframe").addEventListener("click", (e) => {
   reloadCurrentView(false);
 });
 $("#refresh").addEventListener("click", () => { loadBosses(true); reloadCurrentView(true); });
+$("#update-logs").addEventListener("click", updateLogs);
 $("#raid-select").addEventListener("change", renderBossOptions);
 $("#boss-select").addEventListener("change", (e) => {
   const enc = e.target.value;
@@ -239,3 +287,4 @@ document.querySelectorAll("#timeframe button").forEach((b) =>
   b.classList.toggle("active", Number(b.dataset.days) === state.days));
 load(false);
 loadBosses(false);
+refreshSyncStatus();

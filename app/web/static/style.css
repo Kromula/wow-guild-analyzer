@@ -87,6 +87,17 @@ body {
 .refresh:hover { border-color: var(--gold-soft); color: var(--gold); }
 .refresh:active { transform: translateY(1px); }
 
+.update {
+  border: 1px solid var(--gold-soft);
+  background: linear-gradient(180deg, var(--gold), var(--gold-soft)); color: #1a1303;
+  font-weight: 700; padding: 0.6rem 1rem; border-radius: 12px; cursor: pointer;
+  box-shadow: 0 4px 14px rgba(244, 197, 66, 0.25); transition: all 0.18s ease;
+}
+.update:hover { filter: brightness(1.06); }
+.update:active { transform: translateY(1px); }
+.update:disabled { opacity: 0.55; cursor: progress; filter: grayscale(0.3); }
+.synced { font-size: 0.78rem; color: var(--ink-dim); white-space: nowrap; }
+
 /* ── Drill-down selectors ───────────────────────────────── */
 .drilldown {
   display: flex; gap: 0.8rem; flex-wrap: wrap; align-items: flex-end;

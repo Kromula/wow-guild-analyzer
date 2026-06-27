@@ -5,6 +5,7 @@ from fastapi import APIRouter, HTTPException, Query
 
 from app import service
 from app.config import settings
+from app.wcl import WCLError, WCLRateLimited
 
 router = APIRouter(prefix="/api")
 
@@ -19,7 +20,24 @@ async def status() -> dict:
             "region": settings.guild_region,
         },
         "default_timeframe_days": settings.default_timeframe_days,
+        "sync": service.sync_status(),
     }
+
+
+@router.post("/update-logs")
+async def update_logs(force: bool = Query(default=False)) -> dict:
+    """Manual "Update Logs": pull new/grown current-tier reports into the store."""
+    if not settings.configured:
+        raise HTTPException(status_code=409, detail="App is not configured. See README / .env.example.")
+    try:
+        return await service.sync_logs(force=force)
+    except WCLRateLimited as exc:
+        raise HTTPException(
+            status_code=429,
+            detail="WarcraftLogs rate limit reached. Wait a minute and try Update Logs again.",
+        ) from exc
+    except WCLError as exc:
+        raise HTTPException(status_code=502, detail=f"WarcraftLogs error: {exc}") from exc
 
 
 @router.get("/checks")

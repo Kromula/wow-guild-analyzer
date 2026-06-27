@@ -1,3 +1,3 @@
-from app.wcl.client import WCLClient, WCLError
+from app.wcl.client import WCLClient, WCLError, WCLRateLimited
 
-__all__ = ["WCLClient", "WCLError"]
+__all__ = ["WCLClient", "WCLError", "WCLRateLimited"]

@@ -16,7 +16,7 @@ from app.config import settings
 from app.ingest.fetcher import (RawReport, Timeframe, _assign_deaths, _bucket_events, _fetch_events,
                                 _fetch_player_details, _fetch_table, _list_reports, _load_report_detail,
                                 _to_float)
-from app.ingest.normalize import build_dataset, canonical_report_codes
+from app.ingest.normalize import ReportFrames, build_dataset, canonical_report_codes, dedupe_frames
 from app.wcl import WCLClient
 
 _CONCURRENCY = 5
@@ -58,11 +58,35 @@ async def discover_bosses(tf: Timeframe) -> list[dict]:
             slot["pulls"] += 1
             zone_votes[enc][raw.zone] += 1
 
+    return _group_bosses_by_zone(bosses, zone_votes)
+
+
+def bosses_from_frames(frames: list[ReportFrames]) -> list[dict]:
+    """Raids/bosses for the UI dropdowns, computed from stored frames (no API).
+
+    Same shape as `discover_bosses`, but reads the per-report `fights` frames
+    (which now carry `encounter_id`) instead of live reports. De-dups overlapping
+    same-night logs so dropdown pull counts match the analysis."""
+    bosses: dict[int, dict] = {}
+    zone_votes: dict[int, Counter] = defaultdict(Counter)
+    for fr in dedupe_frames(frames):
+        for row in fr.fights.iter_rows(named=True):
+            enc = row.get("encounter_id")
+            if not enc:
+                continue
+            slot = bosses.setdefault(enc, {"encounter_id": enc, "name": row["name"], "pulls": 0})
+            slot["pulls"] += 1
+            zone_votes[enc][fr.zone] += 1
+
+    return _group_bosses_by_zone(bosses, zone_votes)
+
+
+def _group_bosses_by_zone(bosses: dict[int, dict], zone_votes: dict[int, Counter]) -> list[dict]:
+    """Assign each boss to its most-common report zone, grouped + sorted for the UI."""
     zones: dict[str, list] = defaultdict(list)
     for enc, boss in bosses.items():
         zone = zone_votes[enc].most_common(1)[0][0]
         zones[zone].append(boss)
-
     out = [{"zone": zone, "bosses": sorted(bs, key=lambda b: -b["pulls"])}
            for zone, bs in zones.items()]
     return sorted(out, key=lambda z: z["zone"])

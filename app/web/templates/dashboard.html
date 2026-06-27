@@ -28,7 +28,9 @@
         <button data-days="60">60d</button>
         <button data-days="0" title="Every logged pull, regardless of date">All</button>
       </div>
-      <button class="refresh" id="refresh" title="Re-query WarcraftLogs">⟳ Refresh</button>
+      <button class="update" id="update-logs" title="Fetch new logs from WarcraftLogs into the local store">⬇ Update Logs</button>
+      <button class="refresh" id="refresh" title="Recompute from stored logs">⟳ Refresh</button>
+      <span class="synced" id="last-synced" title="When logs were last pulled from WarcraftLogs"></span>
     </div>
   </header>
 

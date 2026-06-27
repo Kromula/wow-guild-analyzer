@@ -24,7 +24,7 @@ from app.ingest.normalize import ReportFrames
 # Bump to invalidate every stored report when the normalization output changes
 # (new columns, different parsing). Mismatched reports read back as "not stored"
 # and get re-fetched on the next sync.
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2  # v2: fights frame gained encounter_id
 
 # ReportFrames attributes persisted as Parquet, one file each.
 _FRAME_FILES = ("players", "role_rows", "fights", "damage", "healing",
