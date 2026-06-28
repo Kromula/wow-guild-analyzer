@@ -44,7 +44,7 @@ class AnalysisDataset:
 # concatenate cleanly in `assemble` (no dtype-inference drift between reports).
 _FIGHTS_SCHEMA = {"report_code": pl.Utf8, "fight_id": pl.Int64, "name": pl.Utf8,
                   "encounter_id": pl.Int64, "difficulty": pl.Int64, "kill": pl.Boolean,
-                  "duration_s": pl.Float64}
+                  "duration_s": pl.Float64, "fight_percentage": pl.Float64}
 _DAMAGE_SCHEMA = {"report_code": pl.Utf8, "player": pl.Utf8, "player_class": pl.Utf8,
                   "total": pl.Float64, "active_time_s": pl.Float64, "dps": pl.Float64}
 _HEALING_SCHEMA = {"report_code": pl.Utf8, "player": pl.Utf8, "player_class": pl.Utf8,
@@ -175,6 +175,7 @@ def normalize_report(raw: RawReport) -> ReportFrames:
             "difficulty": f.get("difficulty"),
             "kill": bool(f.get("kill")),
             "duration_s": max(0.0, (f["endTime"] - f["startTime"]) / 1000.0),
+            "fight_percentage": f.get("fightPercentage"),
         }
         for f in raw.fights if f.get("encounterID")
     ]

@@ -35,6 +35,9 @@ def _raw_for(meta):
 @pytest.fixture(autouse=True)
 def _env(tmp_path, monkeypatch):
     monkeypatch.setattr(settings, "data_dir", str(tmp_path))
+    # These tests target the incremental-diff logic; the per-encounter boss-frame
+    # fetch is covered separately (test_sync_caches_boss_frames).
+    monkeypatch.setattr(settings, "cache_boss_panels", False)
     yield
 
 
@@ -103,3 +106,20 @@ def test_last_synced_reflects_store(monkeypatch):
     _wire(monkeypatch, [_meta("a")])
     asyncio.run(service.sync_logs())
     assert service.last_synced() is not None
+
+
+def test_sync_caches_boss_frames(monkeypatch):
+    """With boss caching on, sync fetches per-encounter frames and attaches them."""
+    from app import store
+    from app.ingest.normalize import normalize_report
+    monkeypatch.setattr(settings, "cache_boss_panels", True)
+    _wire(monkeypatch, [_meta("a")])
+
+    async def fake_enc(raws):
+        # One encounter (9999) cached for report "a".
+        return {r.code: {9999: normalize_report(_raw_for(_meta(r.code)))} for r in raws}
+
+    monkeypatch.setattr(service, "fetch_encounter_frames", fake_enc)
+    asyncio.run(service.sync_logs())
+    assert store.encounter_is_cached(9999) is True
+    assert store.load_encounter("a", 9999) is not None

@@ -14,9 +14,11 @@ import time
 from app import store
 from app.checks import list_checks, run_all
 from app.config import settings
-from app.ingest import (Timeframe, assemble, build_dataset, fetch_dataset, fetch_report_list,
-                        fetch_reports, normalize_report)
-from app.ingest.boss import analyze_boss, bosses_from_frames, discover_bosses
+from app.ingest import (Timeframe, assemble, build_dataset, dedupe_frames, fetch_dataset,
+                        fetch_report_list, fetch_reports, normalize_report)
+from app.ingest.boss import (analyze_boss, boss_summary_from_frames, bosses_from_frames,
+                             discover_bosses, fetch_encounter_frames)
+from app.wcl import WCLError
 
 _DIFFICULTY_NAMES = {0: "All", 1: "LFR", 3: "Normal", 4: "Heroic", 5: "Mythic"}
 
@@ -117,6 +119,16 @@ async def sync_logs(*, force: bool = False) -> dict:
         now = time.time()
         for raw in raws:
             store.store_report(normalize_report(raw), fetched_at=now)
+        # Per-encounter (boss-panel) frames — heavier, best-effort: the aggregate
+        # is already stored, so a rate-limit here just defers boss caching to the
+        # next sync rather than losing this run's work.
+        if raws and settings.cache_boss_panels:
+            try:
+                enc_map = await fetch_encounter_frames(raws)
+            except WCLError:
+                enc_map = {}
+            for code, encounters in enc_map.items():
+                store.attach_encounters(code, encounters)
         if raws:
             _invalidate_caches()  # new data — drop cached datasets/boss panels
         return {
@@ -169,7 +181,20 @@ async def boss_panel(days: int, encounter_id: int, *, force: bool = False) -> di
     cached = _boss_cache.get(key)
     if cached and not force and time.time() - cached[0] < _CACHE_TTL_S:
         return cached[1]
-    panel = await analyze_boss(_timeframe(days), encounter_id)
+    tf = _timeframe(days)
+    if store.encounter_is_cached(encounter_id):
+        # Served from stored per-encounter frames — no WCL calls.
+        frames = dedupe_frames([f for f in store.load_encounter_frames(encounter_id)
+                                if tf.is_all_time or tf.start_ms <= f.start_time <= tf.end_ms])
+        if frames:
+            ds = assemble(frames, tf)
+            panel = {"boss": boss_summary_from_frames(frames, encounter_id),
+                     "checks": [r.to_dict() for r in run_all(ds, boss_view=True)]}
+        else:
+            panel = {"error": "No pulls of that boss in the selected window."}
+    else:
+        # Not cached yet (e.g. boss-panel caching off, or pre-cache sync) — live.
+        panel = await analyze_boss(tf, encounter_id)
     panel["timeframe_days"] = days
     _boss_cache[key] = (time.time(), panel)
     return panel

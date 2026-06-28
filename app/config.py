@@ -83,6 +83,12 @@ class Settings(BaseSettings):
     # Each finished raid log is immutable, so it's parsed once and reused.
     data_dir: str = "data"
 
+    # Cache per-encounter (boss) frames during sync so boss panels load from the
+    # store with no API calls. This makes "Update Logs" heavier (per-encounter
+    # table fetches), so it can be disabled — boss panels then fetch live on
+    # demand, as before.
+    cache_boss_panels: bool = True
+
     # When several raiders upload a log for the same night, those reports overlap
     # in time and would double-count pulls/deaths/attendance. Keep one canonical
     # log per cluster of overlapping same-zone reports (the one with the most

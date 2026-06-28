@@ -34,6 +34,7 @@ def _env(tmp_path, monkeypatch):
     monkeypatch.setattr(settings, "data_dir", str(tmp_path))
     monkeypatch.setattr(settings, "min_attendance_pct", 0.0)
     monkeypatch.setattr(settings, "dedupe_overlapping_logs", False)
+    monkeypatch.setattr(settings, "cache_boss_panels", False)  # avoid live per-encounter fetch in sync
     service._cache.clear()
     service._boss_list_cache.clear()
     service._boss_cache.clear()

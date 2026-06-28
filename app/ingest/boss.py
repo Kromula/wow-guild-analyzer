@@ -11,12 +11,15 @@ from __future__ import annotations
 import asyncio
 from collections import Counter, defaultdict
 
+import polars as pl
+
 from app.checks import run_all
 from app.config import settings
 from app.ingest.fetcher import (RawReport, Timeframe, _assign_deaths, _bucket_events, _fetch_events,
                                 _fetch_player_details, _fetch_table, _list_reports, _load_report_detail,
                                 _to_float)
-from app.ingest.normalize import ReportFrames, build_dataset, canonical_report_codes, dedupe_frames
+from app.ingest.normalize import (ReportFrames, build_dataset, canonical_report_codes, dedupe_frames,
+                                  normalize_report)
 from app.wcl import WCLClient
 
 _CONCURRENCY = 5
@@ -135,6 +138,64 @@ def _boss_summary(relevant: list[RawReport], encounter_id: int) -> dict:
         "best_kill_s": min(kill_durs) if kill_durs else None,
         "best_wipe_pct": min(wipe_pcts) if wipe_pcts else None,
     }
+
+
+def boss_summary_from_frames(frames: list[ReportFrames], encounter_id: int) -> dict:
+    """Same shape as `_boss_summary`, computed from stored per-encounter frames."""
+    parts = [f.fights for f in frames]
+    fights = pl.concat(parts) if parts else pl.DataFrame()
+    if fights.height:
+        fights = fights.filter(pl.col("encounter_id") == encounter_id)
+    rows = fights.to_dicts()
+    name = rows[0]["name"] if rows else "?"
+    kill_durs = [r["duration_s"] for r in rows if r["kill"]]
+    wipe_pcts = [r["fight_percentage"] for r in rows
+                 if not r["kill"] and r["fight_percentage"] is not None]
+    kills = sum(1 for r in rows if r["kill"])
+    return {
+        "name": name, "zone": frames[0].zone if frames else "?", "encounter_id": encounter_id,
+        "pulls": len(rows), "kills": kills, "wipes": len(rows) - kills,
+        "best_kill_s": min(kill_durs) if kill_durs else None,
+        "best_wipe_pct": min(wipe_pcts) if wipe_pcts else None,
+    }
+
+
+def _scope_raw(raw: RawReport, encounter_id: int) -> RawReport:
+    """A copy of `raw` whose fights are just this encounter's (empty tables)."""
+    return RawReport(
+        code=raw.code, title=raw.title, start_time=raw.start_time, end_time=raw.end_time,
+        zone=raw.zone, players=raw.players,
+        fights=[f for f in raw.fights if f.get("encounterID") == encounter_id],
+    )
+
+
+async def fetch_encounter_frames(raws: list[RawReport]) -> dict[str, dict[int, ReportFrames]]:
+    """Per-encounter ReportFrames for each report, for the store (boss panels).
+
+    For every encounter in every report we fetch that encounter's tables (reusing
+    `_populate_boss_tables`) and normalize them — so a boss panel can later be
+    served entirely from disk. This is the heavy part of a sync."""
+    client = WCLClient()
+    sem = asyncio.Semaphore(_CONCURRENCY)
+
+    async def guarded(coro):
+        async with sem:
+            return await coro
+
+    out: dict[str, dict[int, ReportFrames]] = {}
+    try:
+        for raw in raws:
+            encounters = sorted({f["encounterID"] for f in raw.fights if f.get("encounterID")})
+            per: dict[int, ReportFrames] = {}
+            for enc in encounters:
+                scoped = _scope_raw(raw, enc)
+                await _populate_boss_tables(guarded, client, scoped, enc)
+                per[enc] = normalize_report(scoped)
+            if per:
+                out[raw.code] = per
+    finally:
+        await client.aclose()
+    return out
 
 
 async def analyze_boss(tf: Timeframe, encounter_id: int) -> dict:
