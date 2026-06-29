@@ -40,7 +40,10 @@ class Timeframe:
 
     @property
     def is_all_time(self) -> bool:
-        return self.days <= 0
+        # Keyed on the lower bound, not `days`: only the all-time window has no
+        # lower bound (start_ms == 0). This lets bounded windows use a sentinel
+        # `days` (e.g. the latest-raid scope) without being mistaken for all-time.
+        return self.start_ms <= 0
 
 
 @dataclass

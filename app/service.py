@@ -31,8 +31,33 @@ def _lock_for(days: int) -> asyncio.Lock:
     return _locks.setdefault(days, asyncio.Lock())
 
 
+# Sentinel `days` value for the "Last" filter — the most recent raid night,
+# rather than a rolling day count. Bounded window, resolved from the store.
+LAST_RAID = -1
+
+
+def _latest_raid_window() -> tuple[int, int] | None:
+    """[start_ms, end_ms] spanning the most recent raid night, or None if the store
+    is empty. The night is the newest raid-night report plus every other report
+    overlapping its time window (co-loggers of the same evening), so multi-logger
+    nights aren't truncated — dedupe in `assemble` collapses the duplicates."""
+    frames = store.load_reports(store.stored_codes())
+    raids = [f for f in frames if f.is_raid_night] or frames
+    if not raids:
+        return None
+    newest = max(raids, key=lambda f: f.start_time)
+    night = [f for f in frames
+             if f.start_time <= newest.end_time and f.end_time >= newest.start_time]
+    return min(f.start_time for f in night), max(f.end_time for f in night)
+
+
 def _timeframe(days: int) -> Timeframe:
-    """A rolling window, or all-time when days is 0."""
+    """A rolling window, all-time (days <= 0), or the latest raid night (LAST_RAID)."""
+    if days == LAST_RAID:
+        win = _latest_raid_window()
+        if win:
+            return Timeframe(days=LAST_RAID, start_ms=win[0], end_ms=win[1])
+        return Timeframe.all_time()  # empty store: fall back so a live fetch still works
     return Timeframe.all_time() if days <= 0 else Timeframe.last_n_days(days)
 
 

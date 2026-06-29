@@ -13,6 +13,10 @@ const $ = (sel) => document.querySelector(sel);
 const overlay = $("#overlay");
 const results = $("#results");
 
+// Timeframe labels. days: -1 = latest raid, 0 = all-time, N = rolling N-day window.
+const windowLabel = (days) => days === -1 ? "Last" : days ? days + "d" : "All";
+const bossWindowLabel = (days) => days === -1 ? "last raid" : days ? "last " + days + "d" : "all logs";
+
 function showOverlay(msg) {
   $("#overlay-msg").textContent = msg || "Loading…";
   overlay.hidden = false;
@@ -66,7 +70,7 @@ function renderStats() {
     ${stat(d.fight_count, "Boss pulls")}
     ${stat(d.player_count, "Players")}
     ${stat(d.checks.length, "Checks run")}
-    ${stat(state.days ? state.days + "d" : "All", "Window")}`;
+    ${stat(windowLabel(state.days), "Window")}`;
   const f = d.filters || {};
   const att = Math.round((f.min_attendance_pct || 0) * 100);
   const bits = [
@@ -204,7 +208,7 @@ function renderBossPanel(d) {
     <div class="boss-hero">
       <div>
         <h2>${escapeHtml(b.name)}</h2>
-        <div class="zone">${escapeHtml(b.zone)} · ${d.timeframe_days ? "last " + d.timeframe_days + "d" : "all logs"}</div>
+        <div class="zone">${escapeHtml(b.zone)} · ${bossWindowLabel(d.timeframe_days)}</div>
       </div>
       <div class="metrics">
         ${metric(b.pulls, "Pulls")}
