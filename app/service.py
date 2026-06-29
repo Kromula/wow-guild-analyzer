@@ -114,19 +114,16 @@ def _chunked(items: list, size: int):
 
 
 async def _store_batch(raws: list, now: float) -> None:
-    """Persist one batch: aggregate frames first, then best-effort boss frames."""
+    """Persist one batch, each report atomic: fetch its per-encounter (boss-panel)
+    frames first, then store the aggregate + encounters together. So a stored
+    report ALWAYS has its boss frames — a rate-limit raises here and leaves the
+    batch unstored for the next sync to retry, rather than persisting aggregate-only
+    data that `_needs_fetch` would treat as complete and never backfill the panels
+    for. The caller turns that raise into a graceful `stopped_early`."""
+    enc_map = await fetch_encounter_frames(raws) if (raws and settings.cache_boss_panels) else {}
     for raw in raws:
-        store.store_report(normalize_report(raw), fetched_at=now)
-    # Per-encounter (boss-panel) frames — heavier, best-effort: the aggregate is
-    # already stored, so a rate-limit here just defers boss caching to the next
-    # sync rather than losing this batch's work.
-    if raws and settings.cache_boss_panels:
-        try:
-            enc_map = await fetch_encounter_frames(raws)
-        except WCLError:
-            enc_map = {}
-        for code, encounters in enc_map.items():
-            store.attach_encounters(code, encounters)
+        store.store_report(normalize_report(raw), fetched_at=now,
+                           encounters=enc_map.get(raw.code, {}))
 
 
 async def sync_logs(*, force: bool = False) -> dict:
@@ -149,12 +146,13 @@ async def sync_logs(*, force: bool = False) -> dict:
         for batch in _chunked(to_fetch, settings.sync_batch_size):
             try:
                 raws = await fetch_reports(batch)
+                await _store_batch(raws, now)
             except WCLError:
                 # Rate-limited (or transient WCL failure) after retries. Stop
-                # gracefully — what's stored stays stored; the next sync resumes.
+                # gracefully — earlier batches stay stored; the next sync resumes.
+                # This batch is left unstored (atomic), so it's retried in full.
                 stopped_early = True
                 break
-            await _store_batch(raws, now)
             fetched_total += len(raws)
         if fetched_total:
             _invalidate_caches()  # new data — drop cached datasets/boss panels
