@@ -237,3 +237,7 @@ tbody tr:hover { background: rgba(255,255,255,0.03); }
   color: #ffd0d5; font-size: 0.9rem;
 }
 .banner code { background: rgba(0,0,0,0.3); padding: 1px 6px; border-radius: 6px; }
+/* Informational variant (e.g. backfill paused) — neutral amber, not error red. */
+.banner.notice {
+  background: rgba(255, 196, 87, 0.12); border-color: rgba(255, 196, 87, 0.35); color: #ffe2ac;
+}

@@ -18,8 +18,6 @@ from app.wcl import WCLClient
 from app.wcl.queries import (GUILD_REPORTS, REPORT_EVENTS, REPORT_FIGHTS,
                              REPORT_PLAYER_DETAILS, REPORT_TABLE)
 
-_CONCURRENCY = 5
-
 
 @dataclass
 class Timeframe:
@@ -262,7 +260,7 @@ async def _fetch_populated(metas: list[dict], client: WCLClient, guarded) -> lis
 
 
 def _guarded_factory():
-    sem = asyncio.Semaphore(_CONCURRENCY)
+    sem = asyncio.Semaphore(settings.wcl_concurrency)
 
     async def guarded(coro):
         async with sem:

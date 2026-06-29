@@ -89,6 +89,19 @@ class Settings(BaseSettings):
     # demand, as before.
     cache_boss_panels: bool = True
 
+    # Backfill controls. A first sync of a full season is hundreds of reports ×
+    # ~6 GraphQL queries each, which trips WCL's point-based rate limit if pulled
+    # in one shot. So sync fetches in batches of this many reports and persists
+    # each batch to the store before the next — a rate-limit mid-backfill keeps
+    # everything already fetched, and the next "Update Logs" resumes from there
+    # (stored reports are skipped). Smaller = gentler on the API but more passes.
+    sync_batch_size: int = 20
+
+    # Max concurrent in-flight WCL queries. Bounds how hard a single batch hits
+    # the API; lower it if you still see 429s during backfill, raise it (toward
+    # the old value of 5) if you have rate-limit headroom and want it faster.
+    wcl_concurrency: int = 3
+
     # When several raiders upload a log for the same night, those reports overlap
     # in time and would double-count pulls/deaths/attendance. Keep one canonical
     # log per cluster of overlapping same-zone reports (the one with the most

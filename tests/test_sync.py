@@ -69,10 +69,11 @@ def test_second_sync_is_noop(monkeypatch):
     metas = [_meta("a"), _meta("b")]
     fetched = _wire(monkeypatch, metas)
     asyncio.run(service.sync_logs())          # populate
+    calls_before = len(fetched)
     summary = asyncio.run(service.sync_logs())  # nothing changed
     assert summary["fetched"] == 0
     assert summary["skipped"] == 2
-    assert fetched[-1] == []                  # second run fetched no codes
+    assert len(fetched) == calls_before       # second run made no fetch call
 
 
 def test_grown_report_is_refetched(monkeypatch):
@@ -106,6 +107,50 @@ def test_last_synced_reflects_store(monkeypatch):
     _wire(monkeypatch, [_meta("a")])
     asyncio.run(service.sync_logs())
     assert service.last_synced() is not None
+
+
+def test_backfill_runs_in_batches(monkeypatch):
+    """A large to_fetch list is pulled in bounded batches, all persisted."""
+    monkeypatch.setattr(settings, "sync_batch_size", 2)
+    fetched = _wire(monkeypatch, [_meta(c) for c in "abcde"])
+    summary = asyncio.run(service.sync_logs())
+    assert summary["fetched"] == 5
+    assert [len(call) for call in fetched] == [2, 2, 1]   # batched 2/2/1
+    assert store.stored_codes() == set("abcde")
+
+
+def test_rate_limit_mid_backfill_keeps_progress(monkeypatch):
+    """If WCL rate-limits on a later batch, earlier batches stay stored and the
+    run reports it stopped early with work remaining."""
+    from app.wcl import WCLError
+    monkeypatch.setattr(settings, "sync_batch_size", 2)
+
+    async def fake_list(tf):
+        return [_meta(c) for c in "abcde"]
+
+    calls: list[list[str]] = []
+
+    async def flaky_reports(to_fetch):
+        calls.append([m["code"] for m in to_fetch])
+        if len(calls) == 2:           # second batch trips the limit
+            raise WCLError("Rate limited by WarcraftLogs (429); backing off.")
+        return [_raw_for(m) for m in to_fetch]
+
+    monkeypatch.setattr(service, "fetch_report_list", fake_list)
+    monkeypatch.setattr(service, "fetch_reports", flaky_reports)
+
+    summary = asyncio.run(service.sync_logs())
+    assert summary["fetched"] == 2          # only the first batch landed
+    assert summary["stopped_early"] is True
+    assert summary["remaining"] == 3
+    assert store.stored_codes() == {"a", "b"}
+
+    # Resuming skips what's stored and fetches the rest.
+    _wire(monkeypatch, [_meta(c) for c in "abcde"])
+    resume = asyncio.run(service.sync_logs())
+    assert resume["fetched"] == 3
+    assert resume["stopped_early"] is False
+    assert store.stored_codes() == set("abcde")
 
 
 def test_sync_caches_boss_frames(monkeypatch):
