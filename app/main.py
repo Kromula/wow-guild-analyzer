@@ -20,6 +20,18 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name
 _WEB = Path(__file__).parent / "web"
 
 app = FastAPI(title="WoW Guild Analyzer", version="0.1.0")
+
+
+@app.middleware("http")
+async def _no_browser_cache(request: Request, call_next):
+    """Tell the browser never to cache responses. This is a local single-user dev
+    tool, so the freshness win (a normal refresh always shows the latest UI after a
+    code change — no hard-refresh needed) is worth more than caching."""
+    resp = await call_next(request)
+    resp.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+    return resp
+
+
 app.include_router(api_router)
 app.mount("/static", StaticFiles(directory=_WEB / "static"), name="static")
 templates = Jinja2Templates(directory=str(_WEB / "templates"))
