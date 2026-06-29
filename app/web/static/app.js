@@ -50,6 +50,15 @@ function renderError(msg) {
   document.querySelectorAll(".banner").forEach((b, i) => { if (i > 0) b.remove(); });
 }
 
+// Non-error info banner (e.g. backfill stopped early and needs another pass).
+function renderNotice(html) {
+  document.querySelectorAll(".notice").forEach((n) => n.remove());
+  const div = document.createElement("div");
+  div.className = "banner notice";
+  div.innerHTML = html;
+  results.before(div);
+}
+
 function renderStats() {
   const d = state.data;
   $("#statbar").innerHTML = `
@@ -248,6 +257,14 @@ async function updateLogs() {
       return;
     }
     await refreshSyncStatus();
+    // Backfill batches incrementally; a rate-limit stops it early with work left.
+    // Tell the user to run it again — stored reports are skipped, so it resumes.
+    if (body.stopped_early && body.remaining > 0) {
+      renderNotice(`<b>Backfill paused.</b> Fetched ${body.fetched} report(s); `
+        + `${body.remaining} still to load (WarcraftLogs rate limit). `
+        + `Wait a minute, then click <b>Update Logs</b> again to continue — `
+        + `already-fetched reports are skipped.`);
+    }
   } catch (e) {
     hideOverlay();
     renderError(String(e));

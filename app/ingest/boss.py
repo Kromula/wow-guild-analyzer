@@ -22,13 +22,11 @@ from app.ingest.normalize import (ReportFrames, build_dataset, canonical_report_
                                   normalize_report)
 from app.wcl import WCLClient
 
-_CONCURRENCY = 5
-
 
 async def _load_raid_reports(client: WCLClient, tf: Timeframe) -> list[RawReport]:
     """Reports (raid-only, difficulty-filtered) with fights + roster, no tables."""
     metas = await _list_reports(client, tf)
-    sem = asyncio.Semaphore(_CONCURRENCY)
+    sem = asyncio.Semaphore(settings.wcl_concurrency)
 
     async def one(m):
         async with sem:
@@ -176,7 +174,7 @@ async def fetch_encounter_frames(raws: list[RawReport]) -> dict[str, dict[int, R
     `_populate_boss_tables`) and normalize them — so a boss panel can later be
     served entirely from disk. This is the heavy part of a sync."""
     client = WCLClient()
-    sem = asyncio.Semaphore(_CONCURRENCY)
+    sem = asyncio.Semaphore(settings.wcl_concurrency)
 
     async def guarded(coro):
         async with sem:
@@ -200,7 +198,7 @@ async def fetch_encounter_frames(raws: list[RawReport]) -> dict[str, dict[int, R
 
 async def analyze_boss(tf: Timeframe, encounter_id: int) -> dict:
     client = WCLClient()
-    sem = asyncio.Semaphore(_CONCURRENCY)
+    sem = asyncio.Semaphore(settings.wcl_concurrency)
 
     async def guarded(coro):
         async with sem:

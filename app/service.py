@@ -106,34 +106,63 @@ def _needs_fetch(live_meta: dict, *, force: bool) -> bool:
     return bool(live_end and stored_end and live_end > stored_end)
 
 
+def _chunked(items: list, size: int):
+    """Yield successive `size`-length slices of `items` (size>=1)."""
+    step = max(1, size)
+    for i in range(0, len(items), step):
+        yield items[i:i + step]
+
+
+async def _store_batch(raws: list, now: float) -> None:
+    """Persist one batch: aggregate frames first, then best-effort boss frames."""
+    for raw in raws:
+        store.store_report(normalize_report(raw), fetched_at=now)
+    # Per-encounter (boss-panel) frames — heavier, best-effort: the aggregate is
+    # already stored, so a rate-limit here just defers boss caching to the next
+    # sync rather than losing this batch's work.
+    if raws and settings.cache_boss_panels:
+        try:
+            enc_map = await fetch_encounter_frames(raws)
+        except WCLError:
+            enc_map = {}
+        for code, encounters in enc_map.items():
+            store.attach_encounters(code, encounters)
+
+
 async def sync_logs(*, force: bool = False) -> dict:
     """Pull current-tier logs into the local store, fetching only new/grown reports.
 
     Cheap list step first, then heavy detail/table fetches for just the reports
     that are missing or have grown. Serialized by a lock so two clicks don't
-    double-fetch."""
+    double-fetch.
+
+    The heavy fetch runs in batches (`sync_batch_size`), each persisted before the
+    next, so a full-season backfill is resumable: if WCL rate-limits mid-run, every
+    batch already stored is kept and the next "Update Logs" picks up where this one
+    stopped (stored reports are skipped by `_needs_fetch`)."""
     async with _sync_lock:
         metas = await fetch_report_list(Timeframe.all_time())
         to_fetch = [m for m in metas if _needs_fetch(m, force=force)]
-        raws = await fetch_reports(to_fetch)
         now = time.time()
-        for raw in raws:
-            store.store_report(normalize_report(raw), fetched_at=now)
-        # Per-encounter (boss-panel) frames — heavier, best-effort: the aggregate
-        # is already stored, so a rate-limit here just defers boss caching to the
-        # next sync rather than losing this run's work.
-        if raws and settings.cache_boss_panels:
+        fetched_total = 0
+        stopped_early = False
+        for batch in _chunked(to_fetch, settings.sync_batch_size):
             try:
-                enc_map = await fetch_encounter_frames(raws)
+                raws = await fetch_reports(batch)
             except WCLError:
-                enc_map = {}
-            for code, encounters in enc_map.items():
-                store.attach_encounters(code, encounters)
-        if raws:
+                # Rate-limited (or transient WCL failure) after retries. Stop
+                # gracefully — what's stored stays stored; the next sync resumes.
+                stopped_early = True
+                break
+            await _store_batch(raws, now)
+            fetched_total += len(raws)
+        if fetched_total:
             _invalidate_caches()  # new data — drop cached datasets/boss panels
         return {
-            "fetched": len(raws),
+            "fetched": fetched_total,
             "skipped": len(metas) - len(to_fetch),
+            "remaining": len(to_fetch) - fetched_total,
+            "stopped_early": stopped_early,
             "current_tier_reports": len(metas),
             "stored_total": len(store.stored_codes()),
             "last_synced": last_synced(),
