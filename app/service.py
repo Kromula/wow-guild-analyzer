@@ -157,45 +157,70 @@ async def _store_batch(raws: list, now: float) -> None:
                            encounters=enc_map.get(raw.code, {}))
 
 
+async def _run_sync(to_fetch: list[dict], listed: int, scope: str) -> dict:
+    """Fetch+store `to_fetch` in resumable batches. Each batch is persisted before
+    the next, so a rate-limit mid-run keeps everything already fetched and the next
+    run picks up where this stopped (stored reports are skipped by `_needs_fetch`).
+    Caller holds `_sync_lock`."""
+    now = time.time()
+    fetched_total = 0
+    stopped_early = False
+    for batch in _chunked(to_fetch, settings.sync_batch_size):
+        try:
+            raws = await fetch_reports(batch)
+            await _store_batch(raws, now)
+        except WCLError:
+            # Rate-limited (or transient WCL failure) after retries. Stop
+            # gracefully — earlier batches stay stored; the next run resumes.
+            # This batch is left unstored (atomic), so it's retried in full.
+            stopped_early = True
+            break
+        fetched_total += len(raws)
+    if fetched_total:
+        _invalidate_caches()  # new data — drop cached datasets/boss panels
+    return {
+        "fetched": fetched_total,
+        "skipped": listed - len(to_fetch),
+        "remaining": len(to_fetch) - fetched_total,
+        "stopped_early": stopped_early,
+        "scope": scope,
+        "current_tier_reports": listed,
+        "stored_total": len(store.stored_codes()),
+        "last_synced": last_synced(),
+    }
+
+
+def _latest_night_metas(metas: list[dict]) -> list[dict]:
+    """From a current-tier report list, just the most recent raid night: the newest
+    report plus any others overlapping its window (co-loggers of the same evening)."""
+    if not metas:
+        return []
+    newest = max(metas, key=lambda m: m.get("startTime") or 0)
+    ns, ne = newest.get("startTime") or 0, newest.get("endTime") or 0
+    return [m for m in metas
+            if (m.get("startTime") or 0) <= ne and (m.get("endTime") or 0) >= ns]
+
+
 async def sync_logs(*, force: bool = False) -> dict:
-    """Pull current-tier logs into the local store, fetching only new/grown reports.
-
-    Cheap list step first, then heavy detail/table fetches for just the reports
-    that are missing or have grown. Serialized by a lock so two clicks don't
-    double-fetch.
-
-    The heavy fetch runs in batches (`sync_batch_size`), each persisted before the
-    next, so a full-season backfill is resumable: if WCL rate-limits mid-run, every
-    batch already stored is kept and the next "Update Logs" picks up where this one
-    stopped (stored reports are skipped by `_needs_fetch`)."""
+    """Pull current-tier logs into the local store, fetching only new/grown (or
+    revision-stale) reports. Cheap list step first, then heavy detail/table fetches
+    for just the reports that need it. Serialized by a lock so two clicks don't
+    double-fetch. Batched + resumable (see `_run_sync`)."""
     async with _sync_lock:
         metas = await fetch_report_list(Timeframe.all_time())
         to_fetch = [m for m in metas if _needs_fetch(m, force=force)]
-        now = time.time()
-        fetched_total = 0
-        stopped_early = False
-        for batch in _chunked(to_fetch, settings.sync_batch_size):
-            try:
-                raws = await fetch_reports(batch)
-                await _store_batch(raws, now)
-            except WCLError:
-                # Rate-limited (or transient WCL failure) after retries. Stop
-                # gracefully — earlier batches stay stored; the next sync resumes.
-                # This batch is left unstored (atomic), so it's retried in full.
-                stopped_early = True
-                break
-            fetched_total += len(raws)
-        if fetched_total:
-            _invalidate_caches()  # new data — drop cached datasets/boss panels
-        return {
-            "fetched": fetched_total,
-            "skipped": len(metas) - len(to_fetch),
-            "remaining": len(to_fetch) - fetched_total,
-            "stopped_early": stopped_early,
-            "current_tier_reports": len(metas),
-            "stored_total": len(store.stored_codes()),
-            "last_synced": last_synced(),
-        }
+        return await _run_sync(to_fetch, len(metas), scope="all")
+
+
+async def sync_latest(*, force: bool = False) -> dict:
+    """Import just the most recent raid night's reports (new/grown) — a cheap,
+    rate-limit-friendly 'grab tonight's logs' for the Last view that skips the
+    full-tier backfill of older reports."""
+    async with _sync_lock:
+        metas = await fetch_report_list(Timeframe.all_time())
+        night = _latest_night_metas(metas)
+        to_fetch = [m for m in night if _needs_fetch(m, force=force)]
+        return await _run_sync(to_fetch, len(night), scope="latest")
 
 
 def _invalidate_caches() -> None:

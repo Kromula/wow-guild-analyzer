@@ -25,12 +25,16 @@ async def status() -> dict:
 
 
 @router.post("/update-logs")
-async def update_logs(force: bool = Query(default=False)) -> dict:
-    """Manual "Update Logs": pull new/grown current-tier reports into the store."""
+async def update_logs(force: bool = Query(default=False),
+                      scope: str = Query(default="all", pattern="^(all|latest)$")) -> dict:
+    """Manual log sync into the store. scope=all pulls every new/grown/stale
+    current-tier report; scope=latest pulls only the most recent raid night (cheap,
+    for the Last view) and skips the full backfill."""
     if not settings.configured:
         raise HTTPException(status_code=409, detail="App is not configured. See README / .env.example.")
     try:
-        return await service.sync_logs(force=force)
+        return await (service.sync_latest(force=force) if scope == "latest"
+                      else service.sync_logs(force=force))
     except WCLRateLimited as exc:
         raise HTTPException(
             status_code=429,

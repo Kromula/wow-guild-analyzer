@@ -109,6 +109,36 @@ def test_last_synced_reflects_store(monkeypatch):
     assert service.last_synced() is not None
 
 
+def _meta_at(code, start, hours=3):
+    return {"code": code, "title": code, "startTime": start,
+            "endTime": start + hours * 3_600_000, "zone": {"id": 46, "name": "VS / DR / MQD"}}
+
+
+def test_sync_latest_only_fetches_the_newest_night(monkeypatch):
+    DAY = 86_400_000
+    metas = [_meta_at("old", START), _meta_at("midweek", START + 3 * DAY),
+             _meta_at("tonight", START + 7 * DAY)]
+    fetched = _wire(monkeypatch, metas)
+    summary = asyncio.run(service.sync_latest())
+    assert summary["scope"] == "latest"
+    assert summary["fetched"] == 1
+    assert fetched[-1] == ["tonight"]              # older nights untouched
+    assert store.stored_codes() == {"tonight"}
+
+
+def test_sync_latest_includes_same_night_co_logger(monkeypatch):
+    DAY = 86_400_000
+    # main + co-logger overlap tonight; a previous night must be excluded.
+    metas = [_meta_at("prev", START),
+             _meta_at("main", START + 7 * DAY),
+             _meta_at("colog", START + 7 * DAY + 3_600_000)]  # starts 1h into main's window
+    fetched = _wire(monkeypatch, metas)
+    summary = asyncio.run(service.sync_latest())
+    assert summary["fetched"] == 2
+    assert set(fetched[-1]) == {"main", "colog"}
+    assert "prev" not in store.stored_codes()
+
+
 def test_backfill_runs_in_batches(monkeypatch):
     """A large to_fetch list is pulled in bounded batches, all persisted."""
     monkeypatch.setattr(settings, "sync_batch_size", 2)

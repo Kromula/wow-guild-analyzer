@@ -247,38 +247,43 @@ async function refreshSyncStatus() {
   } catch { /* leave label as-is */ }
 }
 
-async function updateLogs() {
-  const btn = $("#update-logs");
-  btn.disabled = true;
-  showOverlay("Updating logs from WarcraftLogs… this can take a minute.");
+// scope: "all" = full new/grown/stale backfill; "latest" = just the most recent
+// raid night (cheap — for the Last view).
+async function updateLogs(scope = "all") {
+  const buttons = [$("#update-logs"), $("#update-latest")].filter(Boolean);
+  buttons.forEach((b) => { b.disabled = true; });
+  showOverlay(scope === "latest"
+    ? "Importing the latest raid from WarcraftLogs…"
+    : "Updating logs from WarcraftLogs… this can take a minute.");
+  let ok = false;
   try {
-    const res = await fetch("/api/update-logs", { method: "POST" });
+    const res = await fetch(`/api/update-logs?scope=${scope}`, { method: "POST" });
     const body = await res.json().catch(() => ({}));
     if (!res.ok) {
       hideOverlay();
       renderError(body.detail || `Update failed (${res.status})`);
-      btn.disabled = false;
-      return;
-    }
-    await refreshSyncStatus();
-    // Backfill batches incrementally; a rate-limit stops it early with work left.
-    // Tell the user to run it again — stored reports are skipped, so it resumes.
-    if (body.stopped_early && body.remaining > 0) {
-      renderNotice(`<b>Backfill paused.</b> Fetched ${body.fetched} report(s); `
-        + `${body.remaining} still to load (WarcraftLogs rate limit). `
-        + `Wait a minute, then click <b>Update Logs</b> again to continue — `
-        + `already-fetched reports are skipped.`);
+    } else {
+      ok = true;
+      await refreshSyncStatus();
+      // A rate-limit stops the sync early with work left; stored reports are
+      // skipped on the next run, so just tell the user to click again.
+      if (body.stopped_early && body.remaining > 0) {
+        const again = scope === "latest" ? "Update Latest" : "Update Logs";
+        renderNotice(`<b>Sync paused.</b> Fetched ${body.fetched} report(s); `
+          + `${body.remaining} still to load (WarcraftLogs rate limit). `
+          + `Wait a minute, then click <b>${again}</b> again — already-fetched reports are skipped.`);
+      }
     }
   } catch (e) {
     hideOverlay();
     renderError(String(e));
-    btn.disabled = false;
-    return;
   }
-  btn.disabled = false;
-  // Re-read the freshly-synced store (these manage their own overlay).
-  loadBosses(false);
-  reloadCurrentView(false);
+  buttons.forEach((b) => { b.disabled = false; });
+  if (ok) {
+    // Re-read the freshly-synced store (these manage their own overlay).
+    loadBosses(false);
+    reloadCurrentView(false);
+  }
 }
 
 // ── wire up controls ──────────────────────────────────────
@@ -296,7 +301,8 @@ $("#timeframe").addEventListener("click", (e) => {
   reloadCurrentView(false);
 });
 $("#refresh").addEventListener("click", () => { loadBosses(true); reloadCurrentView(true); });
-$("#update-logs").addEventListener("click", updateLogs);
+$("#update-logs").addEventListener("click", () => updateLogs("all"));
+$("#update-latest").addEventListener("click", () => updateLogs("latest"));
 $("#raid-select").addEventListener("change", renderBossOptions);
 $("#boss-select").addEventListener("change", (e) => {
   const enc = e.target.value;
