@@ -102,7 +102,11 @@ class Settings(BaseSettings):
     # each batch to the store before the next — a rate-limit mid-backfill keeps
     # everything already fetched, and the next "Update Logs" resumes from there
     # (stored reports are skipped). Smaller = gentler on the API but more passes.
-    sync_batch_size: int = 20
+    # Kept small so a heavy backfill (re-fetching reports with their per-encounter
+    # boss frames) banks progress even on a partly-recovered point budget, rather
+    # than one big first batch failing wholesale; normal syncs are a few reports
+    # anyway, so the extra passes cost nothing there.
+    sync_batch_size: int = 5
 
     # Max concurrent in-flight WCL queries. Bounds how hard a single batch hits
     # the API; lower it if you still see 429s during backfill, raise it (toward
