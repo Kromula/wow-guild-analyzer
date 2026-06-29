@@ -280,6 +280,9 @@ async function updateLogs(scope = "all") {
   }
   buttons.forEach((b) => { b.disabled = false; });
   if (ok) {
+    // Store changed — drop the cached overall dataset so the overall view
+    // re-fetches (otherwise switching back from a boss shows pre-sync stats).
+    state.data = null;
     // Re-read the freshly-synced store (these manage their own overlay).
     loadBosses(false);
     reloadCurrentView(false);
@@ -296,6 +299,7 @@ $("#timeframe").addEventListener("click", (e) => {
   const btn = e.target.closest("button");
   if (!btn) return;
   state.days = Number(btn.dataset.days);
+  state.data = null;  // scope changed — force the overall view to re-fetch, not re-render stale data
   document.querySelectorAll("#timeframe button").forEach((b) => b.classList.toggle("active", b === btn));
   loadBosses(false);
   reloadCurrentView(false);
