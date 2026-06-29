@@ -1,35 +1,14 @@
 """Shared helpers for built-in checks."""
 from __future__ import annotations
 
-import json
-from pathlib import Path
-
 import polars as pl
 
 from app.ingest.normalize import AnalysisDataset
-
-# Survival ability name lists (consumables + personal defensives). Editable
-# without code changes — see survival_abilities.json. Matching is case-insensitive
-# substring on the cast ability name.
-_ABIL = json.loads((Path(__file__).parent / "survival_abilities.json").read_text(encoding="utf-8"))
-CONSUMABLES = tuple(s.lower() for s in _ABIL.get("consumables", []))
-DEFENSIVES = tuple(s.lower() for s in _ABIL.get("personal_defensives", []))
-
-
-def classify_ability(name: str) -> str | None:
-    """Tag a cast ability name as 'consumable', 'defensive', or None.
-
-    Excludes "create" casts so a Warlock's *Create Healthstone* isn't counted as
-    *using* a healthstone — only consumption/usage counts.
-    """
-    low = (name or "").lower()
-    if "create" in low:
-        return None
-    if any(p in low for p in CONSUMABLES):
-        return "consumable"
-    if any(p in low for p in DEFENSIVES):
-        return "defensive"
-    return None
+# Survival ability name lists + classifier live in app.survival_config (shared with
+# the ingest layer, which resolves consumable spell ids from the same patterns).
+# Re-exported so existing `from app.checks.builtin._util import classify_ability`
+# call sites keep working.
+from app.survival_config import CONSUMABLES, DEFENSIVES, classify_ability  # noqa: F401
 
 
 def fmt_num(n: float) -> str:

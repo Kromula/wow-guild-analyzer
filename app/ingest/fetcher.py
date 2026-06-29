@@ -10,10 +10,12 @@ from __future__ import annotations
 
 import asyncio
 import time
+from collections import Counter
 from dataclasses import dataclass, field
 from typing import Any
 
 from app.config import settings
+from app.survival_config import classify_ability
 from app.wcl import WCLClient
 from app.wcl.queries import (GUILD_REPORTS, REPORT_EVENTS, REPORT_FIGHTS,
                              REPORT_PLAYER_DETAILS, REPORT_TABLE)
@@ -58,6 +60,12 @@ class RawReport:
     player_details: Any = field(default_factory=dict)
     # fight_id -> list of damage-taken events (boss-specific, e.g. Glaive hits)
     damage_taken_by_fight: dict[int, Any] = field(default_factory=dict)
+    # masterData ability map [{gameID, name}] — used to resolve consumable spell ids.
+    abilities: list[dict[str, Any]] = field(default_factory=list)
+    # Consumable (healthstone/potion) usage counted from the cast-event stream:
+    # [{player, ability_id, ability_name, hits}]. Folded into the casts frame in
+    # normalize, since WCL's aggregate Casts table omits item usage.
+    consumable_casts: list[dict[str, Any]] = field(default_factory=list)
 
 
 def _to_float(v: object, default: float = 0.0) -> float:
@@ -177,7 +185,9 @@ async def _load_report_detail(client: WCLClient, report_meta: dict[str, Any]) ->
         if f.get("encounterID") and (not settings.raid_difficulty
                                      or f.get("difficulty") == settings.raid_difficulty)
     ]
-    players = (report.get("masterData") or {}).get("actors") or []
+    master = report.get("masterData") or {}
+    players = master.get("actors") or []
+    abilities = master.get("abilities") or []
 
     raw = RawReport(
         code=code,
@@ -187,6 +197,7 @@ async def _load_report_detail(client: WCLClient, report_meta: dict[str, Any]) ->
         zone=(report_meta.get("zone") or {}).get("name", "Unknown"),
         fights=fights,
         players=players,
+        abilities=abilities,
     )
     return raw
 
@@ -246,7 +257,21 @@ def _report_table_jobs(guarded, client: WCLClient, raw: RawReport) -> list:
     jobs.append(_assign_player_details(guarded, client, raw, span_start, span_end, fight_ids))
     fight_bounds = {f["id"]: (float(f["startTime"]), float(f["endTime"])) for f in encounter_fights}
     jobs.append(_assign_deaths(guarded, client, raw, fight_bounds))
+    if settings.track_consumables:
+        jobs.append(_assign_consumables(guarded, client, raw, span_start, span_end, fight_ids))
     return jobs
+
+
+def _consumable_ids(raw: RawReport) -> dict[int, str]:
+    """Spell ids in this report's ability map that classify as a consumable, mapped
+    to their name. Resolving ids per report (rather than hardcoding) keeps the
+    config name-based and self-updating across tiers."""
+    out: dict[int, str] = {}
+    for ab in raw.abilities:
+        gid, name = ab.get("gameID"), ab.get("name")
+        if gid is not None and classify_ability(name) == "consumable":
+            out[int(gid)] = name or str(gid)
+    return out
 
 
 async def _fetch_populated(metas: list[dict], client: WCLClient, guarded) -> list[RawReport]:
@@ -315,6 +340,29 @@ async def _assign_table(guarded, client, raw: RawReport, data_type: str,
 async def _assign_player_details(guarded, client, raw: RawReport,
                                  start: float, end: float, fight_ids: list[int]) -> None:
     raw.player_details = await guarded(_fetch_player_details(client, raw.code, start, end, fight_ids))
+
+
+async def _assign_consumables(guarded, client, raw: RawReport,
+                              start: float, end: float, fight_ids: list[int]) -> None:
+    """Count healthstone/potion uses from the cast-EVENT stream (the aggregate
+    Casts table omits item usage). One filtered query per consumable spell id
+    present in the report; events carry sourceID, which maps to a player actor."""
+    id2name = {p["id"]: p["name"] for p in raw.players}
+    rows: list[dict[str, Any]] = []
+    for cid, cname in _consumable_ids(raw).items():
+        events = await guarded(_fetch_events(client, raw.code, "Casts", start, end,
+                                             fight_ids, ability_id=cid))
+        counts: Counter = Counter()
+        for ev in events:
+            if ev.get("type") != "cast":  # ignore begincast/other phases — count completed uses
+                continue
+            player = id2name.get(ev.get("sourceID"))
+            if player:  # drop pets/NPCs (sourceID not a player actor)
+                counts[player] += 1
+        for player, n in counts.items():
+            rows.append({"player": player, "ability_id": cid,
+                         "ability_name": cname, "hits": float(n)})
+    raw.consumable_casts = rows
 
 
 async def _assign_deaths(guarded, client, raw: RawReport,

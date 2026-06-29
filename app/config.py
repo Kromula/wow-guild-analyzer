@@ -83,6 +83,13 @@ class Settings(BaseSettings):
     # Each finished raid log is immutable, so it's parsed once and reused.
     data_dir: str = "data"
 
+    # Count consumable usage (healthstones / healing potions) during sync. These
+    # are item casts that WCL's aggregate Casts table omits, so they're pulled from
+    # the cast-EVENT stream filtered to the consumable spell ids resolved per report
+    # (see survival_abilities.json). Adds a few small event queries per report; set
+    # False to skip the fetch (the Consumables check then shows all zeros).
+    track_consumables: bool = True
+
     # Cache per-encounter (boss) frames during sync so boss panels load from the
     # store with no API calls. This makes "Update Logs" heavier (per-encounter
     # table fetches), so it can be disabled — boss panels then fetch live on

@@ -48,6 +48,10 @@ query ReportFights($code: String!) {
           subType
           server
         }
+        abilities {
+          gameID
+          name
+        }
       }
     }
   }

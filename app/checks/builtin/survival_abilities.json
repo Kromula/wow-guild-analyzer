@@ -1,12 +1,10 @@
 {
-  "_comment": "Edit this list freely — it drives the 'defensives & consumables' check. Match is case-insensitive substring on the cast ability name, so 'potion' matches 'Healing Potion', 'Refreshing Healing Potion', etc. No code change needed when you add entries.",
+  "_comment": "Drives the 'Consumables Used' and 'Defensives Used' checks. Match is case-insensitive substring on the ability NAME, so 'Health Potion' matches 'Silvermoon Health Potion', 'Algari Health Potion', etc. — add a new potion/stone by appending its name, no code change. Consumable usage is counted from WCL's cast-EVENT stream (the aggregate Casts table omits item usage), with spell ids resolved per report from the log's ability map; that resolution reuses these same name patterns. Note: 'create'/'soulburn' casts are excluded so making a Healthstone isn't counted as using one.",
   "consumables": [
     "Healthstone",
+    "Health Potion",
     "Healing Potion",
-    "Refreshing Healing Potion",
-    "Dreamwalker's Healing Potion",
-    "Cavedweller's Delight",
-    "Algari Healing Potion"
+    "Cavedweller's Delight"
   ],
   "personal_defensives": [
     "Shield Wall", "Last Stand", "Die by the Sword", "Rallying Cry",

@@ -238,6 +238,21 @@ def normalize_report(raw: RawReport) -> ReportFrames:
                 "hits": _num(e.get("total")),
             })
 
+    # Consumable (healthstone/potion) usage, pre-counted from the cast-event stream
+    # (WCL's aggregate Casts table omits item usage). Same shape as a cast row, so
+    # the Consumables check classifies them with everything else.
+    for c in raw.consumable_casts:
+        name = c.get("player")
+        if not name or (roster and name not in roster):
+            continue
+        cast_rows.append({
+            "report_code": raw.code,
+            "player": name,
+            "ability_id": c.get("ability_id"),
+            "ability_name": c.get("ability_name", "?"),
+            "hits": _num(c.get("hits")),
+        })
+
     # Deaths — per fight, ordered by time of death.
     # WCL death `timestamp` is absolute report time; subtract the fight start
     # so death_time_s is "seconds into the pull".
