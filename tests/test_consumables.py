@@ -95,6 +95,19 @@ def _raw_with_consumables(code, consumable_casts):
     return raw
 
 
+def test_scope_raw_carries_abilities_for_boss_consumables():
+    """Boss-panel frames are built from _scope_raw; it must carry the ability map so
+    per-encounter consumable id resolution works (else boss panels show no usage)."""
+    from app.ingest.boss import _scope_raw
+    raw = RawReport(code="r", title="r", start_time=START, end_time=START, zone="z",
+                    players=[{"id": 1, "name": "Mage"}],
+                    abilities=[{"gameID": 6262, "name": "Healthstone"}],
+                    fights=[{"id": 1, "encounterID": 9999, "startTime": START, "endTime": START + 1}])
+    scoped = _scope_raw(raw, 9999)
+    assert scoped.abilities == raw.abilities
+    assert _consumable_ids(scoped) == {6262: "Healthstone"}
+
+
 def test_consumables_folded_into_casts_and_ranked():
     """End-to-end: consumable_casts land in ds.casts and the check ranks fewest-first,
     with the full roster shown (zero-users included and surfaced at the top)."""

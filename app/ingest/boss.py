@@ -15,9 +15,9 @@ import polars as pl
 
 from app.checks import run_all
 from app.config import settings
-from app.ingest.fetcher import (RawReport, Timeframe, _assign_deaths, _bucket_events, _fetch_events,
-                                _fetch_player_details, _fetch_table, _list_reports, _load_report_detail,
-                                _to_float)
+from app.ingest.fetcher import (RawReport, Timeframe, _assign_consumables, _assign_deaths,
+                                _bucket_events, _fetch_events, _fetch_player_details, _fetch_table,
+                                _list_reports, _load_report_detail, _to_float)
 from app.ingest.normalize import (ReportFrames, build_dataset, canonical_report_codes, dedupe_frames,
                                   normalize_report)
 from app.wcl import WCLClient
@@ -113,6 +113,12 @@ async def _populate_boss_tables(guarded, client: WCLClient, raw: RawReport, enco
     bounds = {f["id"]: (float(f["startTime"]), float(f["endTime"])) for f in bf}
     await _assign_deaths(guarded, client, raw, bounds)
 
+    # Consumable usage (healthstones/potions) for this boss's pulls, from the cast-
+    # event stream — same source as the overall metric, scoped to this encounter so
+    # the boss panel's Consumables check isn't empty.
+    if settings.track_consumables:
+        await _assign_consumables(guarded, client, raw, span_s, span_e, ids)
+
     # Boss-specific avoidable-damage events: Glaive hits on Midnight Falls. One
     # fetch for all this boss's pulls, split per fight by timestamp so each hit can
     # be trimmed to its pull's live portion downstream. Only this encounter, and
@@ -162,7 +168,7 @@ def _scope_raw(raw: RawReport, encounter_id: int) -> RawReport:
     """A copy of `raw` whose fights are just this encounter's (empty tables)."""
     return RawReport(
         code=raw.code, title=raw.title, start_time=raw.start_time, end_time=raw.end_time,
-        zone=raw.zone, players=raw.players,
+        zone=raw.zone, players=raw.players, abilities=raw.abilities,  # abilities -> consumable id resolution
         fights=[f for f in raw.fights if f.get("encounterID") == encounter_id],
     )
 

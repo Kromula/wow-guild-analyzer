@@ -83,10 +83,13 @@ class Consumables(Check):
             for r in df.head(14).to_dicts()
         ]
         zeros = int(df.filter(pl.col("uses") == 0).height) if not df.is_empty() else 0
+        # A review panel (who's using the fewest), not pass/fail — always WARN so it
+        # reads as "worth a glance" (amber) and sorts next to its sibling Defensives
+        # Used rather than sinking to the bottom as GOOD/green.
         return self.result(
-            severity=Severity.WARN if zeros else Severity.GOOD,
+            severity=Severity.WARN,
             headline=(f"{zeros} raider(s) used no healthstone or potion." if zeros
-                      else "Everyone used at least one consumable."),
+                      else "Lowest healthstone/potion users — worth a glance."),
             columns=["Player", "Pots/Stones", "Detail"],
             rows=rows,
         )
