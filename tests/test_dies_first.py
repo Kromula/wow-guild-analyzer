@@ -54,7 +54,7 @@ def test_ranks_by_first_death_count_descending():
     ranked = [(r["player"], r["value"]) for r in res["rows"]]
     assert ranked[0] == ("Alice", 3.0)    # most first-deaths on top
     assert ("Bob", 1.0) in ranked
-    assert res["columns"] == ["Player", "First deaths", "Detail"]
+    assert res["columns"] == ["Player", "First deaths"]
     assert "Alice" in res["headline"] and "3" in res["headline"]
 
 

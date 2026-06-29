@@ -88,7 +88,7 @@ class DiesFirst(Check):
     order = 21
 
     def run(self, ds: AnalysisDataset) -> CheckResult:
-        cols = ["Player", "First deaths", "Detail"]
+        cols = ["Player", "First deaths"]
         deaths = _culpable_deaths(ds)
         if deaths.is_empty():
             return self.result(severity=Severity.INFO, headline="No deaths recorded — clean runs!",
@@ -99,16 +99,12 @@ class DiesFirst(Check):
                                headline="No one died first in any pull.", columns=cols, rows=[])
         agg = (
             firsts.group_by("player")
-            .agg(
-                pl.len().alias("firsts"),
-                pl.col("death_time_s").mean().alias("avg_time"),
-            )
+            .agg(pl.len().alias("firsts"))
             .sort(["firsts", "player"], descending=[True, False])
         )
         rows = [
             CheckRow(player=r["player"], value=float(r["firsts"]),
-                     display=f"{int(r['firsts'])}× first",
-                     detail=f"avg {r['avg_time']:.0f}s into pull")
+                     display=f"{int(r['firsts'])}")
             for r in agg.head(10).to_dicts()
         ]
         worst = rows[0]
