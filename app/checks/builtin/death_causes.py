@@ -28,7 +28,7 @@ class FirstDeathCauses(Check):
         "with pulls affected. Boss view only."
     )
     category = Category.SURVIVAL
-    order = 22
+    order = 23  # after Glaives Taken (22), which slots in just below Dies First (21)
     boss_only = True
 
     def run(self, ds: AnalysisDataset) -> CheckResult | None:

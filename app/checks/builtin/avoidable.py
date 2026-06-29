@@ -48,7 +48,7 @@ class GlaiveDamage(Check):
                   "cascade, not avoidable play). Tanks are excluded — they soak Glaives by "
                   "design. Ranked by damage taken; hits shown too.")
     category = Category.SURVIVAL
-    order = 40
+    order = 22  # right after Dies First (21), before Top Death Causes (23)
     boss_only = True
 
     def run(self, ds: AnalysisDataset) -> CheckResult | None:
@@ -76,7 +76,7 @@ class GlaiveDamage(Check):
         ]
         worst = rows[0] if rows else None
         return self.result(
-            severity=Severity.WARN if worst else Severity.GOOD,
+            severity=Severity.CRITICAL if worst else Severity.GOOD,  # red when anyone ate Glaives
             headline=(f"{worst.player} ate the most Glaive damage ({worst.display})."
                       if worst else "No avoidable Glaive damage before the wipe — clean."),
             columns=["Player", "Glaive Damage", "Hits"],
