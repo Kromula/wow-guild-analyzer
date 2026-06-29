@@ -93,14 +93,20 @@ _sync_lock = asyncio.Lock()
 
 
 def _needs_fetch(live_meta: dict, *, force: bool) -> bool:
-    """True if a current-tier report isn't cached, or grew since we cached it.
+    """True if a current-tier report isn't cached, has grown, or predates the
+    current data revision.
 
     A report logged mid-raid keeps accumulating pulls; its `endTime` grows on
-    later listings, so endTime > stored end_time means there's new data to pull."""
+    later listings, so endTime > stored end_time means there's new data to pull.
+    A stale `data_revision` (e.g. stored before boss-panel consumables existed)
+    triggers a re-fetch too — but the report stays readable in the meantime, so
+    the app keeps serving it rather than going dark like a schema bump would."""
     if force:
         return True
     stored = store.report_meta(live_meta["code"])
     if stored is None:
+        return True
+    if stored.get("data_revision", 0) < store.DATA_REVISION:
         return True
     live_end, stored_end = live_meta.get("endTime"), stored.get("end_time")
     return bool(live_end and stored_end and live_end > stored_end)

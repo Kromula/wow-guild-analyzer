@@ -29,7 +29,15 @@ from app.ingest.normalize import ReportFrames
 # Bump to invalidate every stored report when the normalization output changes
 # (new columns, different parsing). Mismatched reports read back as "not stored"
 # and get re-fetched on the next sync.
-SCHEMA_VERSION = 4  # v4: casts frame + per-encounter frames include consumable usage
+SCHEMA_VERSION = 3  # v3: fights frame gained fight_percentage
+
+# Soft data revision: unlike SCHEMA_VERSION (a hard structural break that makes
+# old reports unreadable / treated-as-absent), a stale revision keeps the report
+# READABLE and served — it just flags it for re-fetch on the next sync. Use this
+# when new data is *added* to the same frame shape (so old data is still valid to
+# show) but a re-fetch would enrich it. Bump 1->2... when that happens.
+#   rev 1: per-encounter (boss-panel) frames now include consumable usage.
+DATA_REVISION = 1
 
 # ReportFrames attributes persisted as Parquet, one file each.
 _FRAME_FILES = ("players", "role_rows", "fights", "damage", "healing",
@@ -87,7 +95,7 @@ def store_report(rf: ReportFrames, *, fetched_at: float,
             "start_time": rf.start_time, "end_time": rf.end_time,
             "is_raid_night": rf.is_raid_night, "present": rf.present,
             "fetched_at": fetched_at, "schema_version": SCHEMA_VERSION,
-            "encounters": sorted(encounters),
+            "data_revision": DATA_REVISION, "encounters": sorted(encounters),
         }
         (tmp / "meta.json").write_text(json.dumps(meta), encoding="utf-8")
         if d.exists():
