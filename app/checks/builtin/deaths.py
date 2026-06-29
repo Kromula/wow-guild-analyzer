@@ -79,37 +79,42 @@ class FrequentDeaths(Check):
 class DiesFirst(Check):
     id = "dies-first"
     name = "Dies First"
-    description = ("Players who tend to die earliest in a pull (low average death order and "
-                  "early death timing). Often a sign of overpulling threat or missing mechanics.")
+    description = ("How often each player is the very first to die in a pull (death order #1), "
+                  "ranked most-first. Repeatedly dying first usually means overpulling threat, "
+                  "eating an early mechanic, or not using a defensive on pull. (An *average* death "
+                  "order would hide this — most deaths are the wipe cascade, so everyone's average "
+                  "sits mid-pack; counting only the first death surfaces the real culprits.)")
     category = Category.SURVIVAL
     order = 21
 
     def run(self, ds: AnalysisDataset) -> CheckResult:
+        cols = ["Player", "First deaths", "Detail"]
         deaths = _culpable_deaths(ds)
         if deaths.is_empty():
             return self.result(severity=Severity.INFO, headline="No deaths recorded — clean runs!",
-                               columns=["Player", "Avg death order", "Detail"], rows=[])
+                               columns=cols, rows=[])
+        firsts = deaths.filter(pl.col("death_order") == 1)
+        if firsts.is_empty():
+            return self.result(severity=Severity.INFO,
+                               headline="No one died first in any pull.", columns=cols, rows=[])
         agg = (
-            deaths.group_by("player")
+            firsts.group_by("player")
             .agg(
-                pl.col("death_order").mean().alias("avg_order"),
+                pl.len().alias("firsts"),
                 pl.col("death_time_s").mean().alias("avg_time"),
-                pl.len().alias("deaths"),
             )
-            # Only meaningful for players who die with some regularity.
-            .filter(pl.col("deaths") >= 2)
-            .sort(["avg_order", "avg_time"])
+            .sort(["firsts", "player"], descending=[True, False])
         )
         rows = [
-            CheckRow(player=r["player"], value=r["avg_order"],
-                     display=f"#{r['avg_order']:.1f} avg",
-                     detail=f"avg {r['avg_time']:.0f}s into pull · {r['deaths']} deaths")
+            CheckRow(player=r["player"], value=float(r["firsts"]),
+                     display=f"{int(r['firsts'])}× first",
+                     detail=f"avg {r['avg_time']:.0f}s into pull")
             for r in agg.head(10).to_dicts()
         ]
-        first = rows[0].player if rows else "nobody"
+        worst = rows[0]
         return self.result(
-            severity=Severity.WARN,
-            headline=f"{first} consistently dies earliest." if rows else "Not enough repeated deaths to rank.",
-            columns=["Player", "Avg death order", "Detail"],
+            severity=Severity.CRITICAL if worst.value >= 5 else Severity.WARN,
+            headline=f"{worst.player} died first {int(worst.value)} times.",
+            columns=cols,
             rows=rows,
         )
