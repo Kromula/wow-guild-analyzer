@@ -125,4 +125,4 @@ def test_consumables_folded_into_casts_and_ranked():
     ranked = [(r["player"], r["value"]) for r in res["rows"]]
     assert ranked[0] == ("Rogue", 0.0)      # zero-user first
     assert ("Mage", 3.0) in ranked and ("Priest", 1.0) in ranked
-    assert res["rows"][0]["detail"]          # zero-user flagged
+    assert res["columns"] == ["Player", "Pots/Stones"]   # no Detail column

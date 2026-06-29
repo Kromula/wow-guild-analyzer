@@ -78,8 +78,7 @@ class Consumables(Check):
         df = _usage_by_player(ds, "consumable")
         rows = [
             CheckRow(player=r["player"], player_class=r["player_class"], value=r["uses"],
-                     display=f"{int(r['uses'])}",
-                     detail="⚠ none used" if r["uses"] == 0 else "")
+                     display=f"{int(r['uses'])}")
             for r in df.head(14).to_dicts()
         ]
         zeros = int(df.filter(pl.col("uses") == 0).height) if not df.is_empty() else 0
@@ -90,6 +89,6 @@ class Consumables(Check):
             severity=Severity.WARN,
             headline=(f"{zeros} raider(s) used no healthstone or potion." if zeros
                       else "Lowest healthstone/potion users — worth a glance."),
-            columns=["Player", "Pots/Stones", "Detail"],
+            columns=["Player", "Pots/Stones"],
             rows=rows,
         )

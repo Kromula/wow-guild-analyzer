@@ -67,7 +67,7 @@ class FrequentDeaths(Check):
         ]
         worst = rows[0] if rows else None
         return self.result(
-            severity=Severity.CRITICAL if worst and worst.value >= 5 else Severity.WARN,
+            severity=Severity.CRITICAL,  # always red — these are the wipe-causing deaths
             headline=(f"{worst.player} was among the first {cutoff} to die "
                       f"{int(worst.value)} times.") if worst else "No early deaths.",
             columns=["Player", "Early deaths"],
@@ -109,7 +109,7 @@ class DiesFirst(Check):
         ]
         worst = rows[0]
         return self.result(
-            severity=Severity.CRITICAL if worst.value >= 5 else Severity.WARN,
+            severity=Severity.CRITICAL,  # always red — first deaths are the wipe triggers
             headline=f"{worst.player} died first {int(worst.value)} times.",
             columns=cols,
             rows=rows,
